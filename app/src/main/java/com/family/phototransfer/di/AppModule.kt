@@ -3,6 +3,7 @@ package com.family.phototransfer.di
 import android.content.Context
 import androidx.room.Room
 import com.family.phototransfer.data.db.AppDatabase
+import com.family.phototransfer.data.db.MIGRATION_1_2
 import com.family.phototransfer.data.db.TransferDao
 import dagger.Module
 import dagger.Provides
@@ -22,11 +23,11 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "photo_transfer_db"
-        ).build()
+        )
+            .addMigrations(MIGRATION_1_2)
+            .build()
     }
 
     @Provides
-    fun provideTransferDao(db: AppDatabase): TransferDao {
-        return db.transferDao()
-    }
+    fun provideTransferDao(db: AppDatabase): TransferDao = db.transferDao()
 }

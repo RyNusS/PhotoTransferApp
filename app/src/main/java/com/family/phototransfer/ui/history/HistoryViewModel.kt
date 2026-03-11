@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.family.phototransfer.data.db.TransferDao
 import com.family.phototransfer.data.db.TransferRecord
+import com.family.phototransfer.data.repository.TransferRepository
 import com.family.phototransfer.ui.upload.formatSize
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -12,49 +13,50 @@ import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
 
-// ── UI 데이터 모델 ─────────────────────────────────────────────
+enum class HistoryFilter { ALL, SEND, RECEIVE, FAILED }
+
 data class HistoryRecordUi(
-    val id: Long,
-    val fileName: String,
-    val status: String,
-    val sizeText: String,
+    val id:           Long,
+    val fileName:     String,
+    val status:       String,       // SUCCESS / FAILED / SKIPPED_DUPLICATE / RECEIVED
+    val direction:    String,       // SEND / RECEIVE
+    val statusLabel:  String,       // 화면 표시용 한글 레이블
+    val sizeText:     String,
     val sourceDevice: String,
-    val timeText: String,
-    val dateGroup: String,       // 날짜 그룹 키 (예: "2024년 3월 15일")
-    val rawBytes: Long
+    val timeText:     String,
+    val dateGroup:    String,
+    val rawBytes:     Long
 )
 
-// ── UI 상태 ───────────────────────────────────────────────────
 data class HistoryUiState(
-    val allRecords: List<HistoryRecordUi>      = emptyList(),
+    val allRecords:      List<HistoryRecordUi> = emptyList(),
     val filteredRecords: List<HistoryRecordUi> = emptyList(),
-    val selectedFilter: HistoryFilter          = HistoryFilter.ALL
+    val selectedFilter:  HistoryFilter         = HistoryFilter.ALL
 ) {
-    val totalCount:     Int  get() = allRecords.size
-    val successCount:   Int  get() = allRecords.count { it.status == "SUCCESS" }
-    val duplicateCount: Int  get() = allRecords.count { it.status == "SKIPPED_DUPLICATE" }
-    val failedCount:    Int  get() = allRecords.count { it.status == "FAILED" }
+    val totalCount:     Int    get() = allRecords.size
+    val sendCount:      Int    get() = allRecords.count { it.direction == "SEND" }
+    val receiveCount:   Int    get() = allRecords.count { it.direction == "RECEIVE" }
+    val failedCount:    Int    get() = allRecords.count { it.status == "FAILED" }
     val totalSizeText:  String get() = formatSize(
-        allRecords.filter { it.status == "SUCCESS" }.sumOf { it.rawBytes }
+        allRecords.filter { it.status == "SUCCESS" || it.status == "RECEIVED" }.sumOf { it.rawBytes }
     )
-
-    // 날짜별 그룹핑
     val groupedRecords: Map<String, List<HistoryRecordUi>>
         get() = filteredRecords.groupBy { it.dateGroup }
 }
 
-// ── ViewModel ─────────────────────────────────────────────────
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
+    private val repository: TransferRepository,
     private val transferDao: TransferDao
 ) : ViewModel() {
 
     private val _filter = MutableStateFlow(HistoryFilter.ALL)
 
+    // ✅ getRecentRecords()로 최근 7일만 표시 (DB는 전체 유지)
     val uiState: StateFlow<HistoryUiState> = combine(
-        transferDao.getAllRecords(),
+        repository.getRecentRecords(),
         _filter
-    ) { records, filter ->
+    ) { records: List<TransferRecord>, filter: HistoryFilter ->
         val uiRecords = records.map { it.toUi() }
         val filtered  = applyFilter(uiRecords, filter)
         HistoryUiState(
@@ -63,48 +65,50 @@ class HistoryViewModel @Inject constructor(
             selectedFilter  = filter
         )
     }.stateIn(
-        scope         = viewModelScope,
-        started       = SharingStarted.WhileSubscribed(5000),
-        initialValue  = HistoryUiState()
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(5000),
+        initialValue = HistoryUiState()
     )
 
-    // 필터 변경
     fun setFilter(filter: HistoryFilter) {
         _filter.value = filter
     }
 
-    // 전체 기록 삭제
     fun clearAll() {
-        viewModelScope.launch {
-            transferDao.deleteAll()
-        }
+        viewModelScope.launch { transferDao.deleteAll() }
     }
 
-    // 필터 적용
-    private fun applyFilter(
-        records: List<HistoryRecordUi>,
-        filter: HistoryFilter
-    ): List<HistoryRecordUi> {
+    private fun applyFilter(records: List<HistoryRecordUi>, filter: HistoryFilter): List<HistoryRecordUi> {
         return when (filter) {
-            HistoryFilter.ALL       -> records
-            HistoryFilter.SUCCESS   -> records.filter { it.status == "SUCCESS" }
-            HistoryFilter.DUPLICATE -> records.filter { it.status == "SKIPPED_DUPLICATE" }
-            HistoryFilter.FAILED    -> records.filter { it.status == "FAILED" }
+            HistoryFilter.ALL     -> records
+            HistoryFilter.SEND    -> records.filter { it.direction == "SEND" }
+            HistoryFilter.RECEIVE -> records.filter { it.direction == "RECEIVE" }
+            HistoryFilter.FAILED  -> records.filter { it.status == "FAILED" }
         }
     }
 
-    // DB 엔티티 → UI 모델 변환
     private fun TransferRecord.toUi(): HistoryRecordUi {
-        val date     = Date(transferredAt)
-        val timeFmt  = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val dateFmt  = SimpleDateFormat("yyyy년 M월 d일", Locale.getDefault())
+        val date    = Date(transferredAt)
+        val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val dateFmt = SimpleDateFormat("yyyy년 M월 d일", Locale.getDefault())
         val todayStr = dateFmt.format(Date())
         val dateStr  = dateFmt.format(date)
+
+        // ✅ 방향/상태에 따라 한글 레이블 결정
+        val statusLabel = when {
+            direction == "RECEIVE" && status == "RECEIVED" -> "수신성공"
+            direction == "SEND"   && status == "SUCCESS"   -> "전송성공"
+            status == "SKIPPED_DUPLICATE"                  -> "중복"
+            status == "FAILED"                             -> "실패"
+            else                                           -> status
+        }
 
         return HistoryRecordUi(
             id           = id,
             fileName     = fileName,
             status       = status,
+            direction    = direction,
+            statusLabel  = statusLabel,
             sizeText     = formatSize(fileSize),
             sourceDevice = sourceDevice,
             timeText     = timeFmt.format(date),

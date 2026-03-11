@@ -2,10 +2,14 @@ package com.family.phototransfer.ui.receiver
 
 import android.content.Context
 import android.os.Environment
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.family.phototransfer.data.repository.TransferRepository
 import com.family.phototransfer.network.ReceivedFile
+import com.family.phototransfer.network.ReceiverStateHolder
 import com.family.phototransfer.network.TransferServer
+import com.family.phototransfer.ui.settings.dataStore
 import com.family.phototransfer.util.NotificationHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -13,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -27,14 +32,16 @@ data class ReceivedFileUi(
 
 data class ReceiverUiState(
     val isListening:   Boolean = false,
-    val myIpAddress:   String = "",
+    val myIpAddress:   String  = "",
     val receivedFiles: List<ReceivedFileUi> = emptyList(),
     val statusMessage: String = "수신 대기 중..."
 )
 
 @HiltViewModel
 class ReceiverViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val repository: TransferRepository,
+    private val receiverStateHolder: ReceiverStateHolder   // ✅ UploadViewModel과 상태 공유
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReceiverUiState())
@@ -42,7 +49,6 @@ class ReceiverViewModel @Inject constructor(
 
     private var server: TransferServer? = null
 
-    // ✅ /Pictures 폴더에 저장 → 구글 포토 자동 감지
     private val saveDir: File
         get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
 
@@ -58,13 +64,14 @@ class ReceiverViewModel @Inject constructor(
                 isListening   = true,
                 statusMessage = "수신 대기 중... (포트 9876)"
             )
+            receiverStateHolder.setReceiving(true)   // ✅ Upload 탭 탐색 버튼 비활성화
 
             withContext(Dispatchers.IO) {
                 if (!saveDir.exists()) saveDir.mkdirs()
 
                 server = TransferServer(
                     saveDirectory  = saveDir,
-                    context        = context,       // ✅ MediaStore 등록용 context 전달
+                    context        = context,
                     onFileReceived = { received: ReceivedFile ->
                         val timeText = java.text.SimpleDateFormat(
                             "HH:mm", java.util.Locale.getDefault()
@@ -81,12 +88,26 @@ class ReceiverViewModel @Inject constructor(
                             statusMessage = "수신 완료: ${received.fileName}"
                         )
 
-                        NotificationHelper.showReceiveComplete(context, received.fileName)
+                        // 수신 기록 DB 저장
+                        viewModelScope.launch {
+                            repository.recordReceived(
+                                fileName   = received.fileName,
+                                fileSize   = received.fileSize,
+                                fromDevice = "송신 기기"
+                            )
+                        }
+
+                        // ✅ show_notification 설정 확인 후 알림
+                        viewModelScope.launch {
+                            val prefs        = context.dataStore.data.first()
+                            val showNotif    = prefs[booleanPreferencesKey("show_notification")] ?: true
+                            if (showNotif) {
+                                NotificationHelper.showReceiveComplete(context, received.fileName)
+                            }
+                        }
                     },
                     onError = { errorMsg ->
-                        _uiState.value = _uiState.value.copy(
-                            statusMessage = "오류: $errorMsg"
-                        )
+                        _uiState.value = _uiState.value.copy(statusMessage = "오류: $errorMsg")
                     }
                 )
                 server?.start()
@@ -99,6 +120,7 @@ class ReceiverViewModel @Inject constructor(
             server?.stop()
             server = null
         }
+        receiverStateHolder.setReceiving(false)      // ✅ Upload 탭 탐색 버튼 재활성화
         _uiState.value = _uiState.value.copy(
             isListening   = false,
             statusMessage = "수신 중지됨"
@@ -121,9 +143,7 @@ class ReceiverViewModel @Inject constructor(
                     it.hostAddress?.startsWith("192.168") == true
                 }
                 ?.hostAddress ?: "IP 확인 중..."
-        } catch (e: Exception) {
-            "IP 확인 중..."
-        }
+        } catch (e: Exception) { "IP 확인 중..." }
     }
 
     private fun formatSize(bytes: Long): String {

@@ -3,23 +3,27 @@ package com.family.phototransfer.ui.upload
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.family.phototransfer.network.DiscoveredDevice
+import com.family.phototransfer.network.ReceiverStateHolder
 import com.family.phototransfer.network.TransferEvent
 import com.family.phototransfer.network.TransferManager
 import com.family.phototransfer.network.WifiDeviceScanner
+import com.family.phototransfer.ui.settings.dataStore
 import com.family.phototransfer.util.NotificationHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-// ── UI 데이터 모델 ─────────────────────────────────────────────
 data class MediaFileUi(
     val id: Long,
     val uri: String,
@@ -38,122 +42,101 @@ data class UploadUiState(
     val cloudSyncActive: Boolean = false,
 
     val isScanning: Boolean = false,
+    val scanEnabled: Boolean = true,          // ✅ 수신기기 수신중일 때 탐색 비활성화
     val discoveredDevices: List<DiscoveredDevice> = emptyList(),
     val selectedDevice: DiscoveredDevice? = null,
 
     val isUploading: Boolean = false,
-    val uploadProgress: Float = 0f,
     val currentUploadFile: String = "",
     val uploadTotal: Int = 0,
     val uploadCurrent: Int = 0,
+    val uploadProgress: Float = 0f,
     val successCount: Int = 0,
     val duplicateCount: Int = 0,
     val failedCount: Int = 0,
     val isUploadDone: Boolean = false,
-
     val errorMessage: String? = null
 ) {
-    val selectedSizeText: String
-        get() {
-            val totalBytes = allFiles.filter { it.id in selectedFiles }.sumOf { it.size }
-            return formatSize(totalBytes)
-        }
+    val selectedSizeText: String get() {
+        val totalBytes = allFiles.filter { it.id in selectedFiles }.sumOf { it.size }
+        return formatSize(totalBytes)
+    }
 }
 
-fun formatSize(bytes: Long): String {
-    return when {
-        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-        bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
-        bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
-        else                   -> "$bytes B"
-    }
+fun formatSize(bytes: Long): String = when {
+    bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
+    bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
+    else                   -> "$bytes B"
 }
 
 @HiltViewModel
 class UploadViewModel @Inject constructor(
-    private val transferManager: TransferManager
+    private val transferManager: TransferManager,
+    private val receiverStateHolder: ReceiverStateHolder  // ✅ 수신 상태 공유
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UploadUiState())
     val uiState: StateFlow<UploadUiState> = _uiState.asStateFlow()
 
-    // ── 갤러리 로드 (실제 폰 - MediaStore 직접 조회) ───────────
+    init {
+        // ✅ Receiver 탭의 수신 상태를 자동으로 감지해서 탐색 버튼 제어
+        viewModelScope.launch {
+            receiverStateHolder.isReceiving.collectLatest { isReceiving ->
+                if (isReceiving) {
+                    // 수신 시작 → 탐색 비활성화 + 기존 탐색 결과 초기화
+                    _uiState.value = _uiState.value.copy(
+                        scanEnabled       = false,
+                        discoveredDevices = emptyList(),
+                        selectedDevice    = null,
+                        cloudSyncActive   = false
+                    )
+                } else {
+                    // 수신 중지 → 탐색 다시 활성화
+                    _uiState.value = _uiState.value.copy(scanEnabled = true)
+                }
+            }
+        }
+    }
+
+    // ── 갤러리 로드 ───────────────────────────────────────────
     fun loadMediaFiles(context: Context) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-
             val files = withContext(Dispatchers.IO) {
                 val result = mutableListOf<MediaFileUi>()
-
-                // 사진
                 val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 context.contentResolver.query(
                     imageUri,
-                    arrayOf(
-                        MediaStore.Images.Media._ID,
-                        MediaStore.Images.Media.DISPLAY_NAME,
-                        MediaStore.Images.Media.SIZE
-                    ),
-                    null, null,
-                    "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
+                    arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE),
+                    null, null, "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
                 )?.use { cursor ->
-                    val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
                     val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
-                        result.add(
-                            MediaFileUi(
-                                id      = id,
-                                uri     = "$imageUri/$id",
-                                name    = cursor.getString(nameCol),
-                                size    = cursor.getLong(sizeCol),
-                                isVideo = false
-                            )
-                        )
+                        result.add(MediaFileUi(id, "$imageUri/$id", cursor.getString(nameCol), cursor.getLong(sizeCol), false))
                     }
                 }
-
-                // 동영상
                 val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                 context.contentResolver.query(
                     videoUri,
-                    arrayOf(
-                        MediaStore.Video.Media._ID,
-                        MediaStore.Video.Media.DISPLAY_NAME,
-                        MediaStore.Video.Media.SIZE,
-                        MediaStore.Video.Media.DURATION
-                    ),
-                    null, null,
-                    "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
+                    arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DURATION),
+                    null, null, "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
                 )?.use { cursor ->
-                    val idCol       = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                    val nameCol     = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                    val sizeCol     = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                    val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                    val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
-                        result.add(
-                            MediaFileUi(
-                                id       = id,
-                                uri      = "$videoUri/$id",
-                                name     = cursor.getString(nameCol),
-                                size     = cursor.getLong(sizeCol),
-                                isVideo  = true,
-                                duration = formatDuration(cursor.getLong(durationCol))
-                            )
-                        )
+                        result.add(MediaFileUi(id, "$videoUri/$id", cursor.getString(nameCol), cursor.getLong(sizeCol), true, formatDuration(cursor.getLong(durCol))))
                     }
                 }
-
                 result.sortedByDescending { it.id }
             }
-
-            _uiState.value = _uiState.value.copy(
-                isLoading     = false,
-                allFiles      = files,
-                filteredFiles = files
-            )
+            _uiState.value = _uiState.value.copy(isLoading = false, allFiles = files, filteredFiles = files)
         }
     }
 
@@ -174,24 +157,35 @@ class UploadViewModel @Inject constructor(
     }
 
     fun selectAll() {
-        _uiState.value = _uiState.value.copy(
-            selectedFiles = _uiState.value.filteredFiles.map { it.id }.toSet()
-        )
+        _uiState.value = _uiState.value.copy(selectedFiles = _uiState.value.filteredFiles.map { it.id }.toSet())
     }
 
     fun clearSelection() {
         _uiState.value = _uiState.value.copy(selectedFiles = emptySet())
     }
 
+    // ── 수신기기 탐색 제어 (7번 요구사항) ─────────────────────
+
+    /** Receiver 탭에서 수신 시작 시 호출 → 탐색 비활성화 + 선택 기기 해제 */
+    fun onReceiverStarted() {
+        _uiState.value = _uiState.value.copy(
+            scanEnabled       = false,
+            discoveredDevices = emptyList(),
+            selectedDevice    = null,
+            cloudSyncActive   = false
+        )
+    }
+
+    /** Receiver 탭에서 수신 중지 시 호출 → 탐색 다시 활성화 */
+    fun onReceiverStopped() {
+        _uiState.value = _uiState.value.copy(scanEnabled = true)
+    }
+
     // ── WiFi 기기 탐색 ────────────────────────────────────────
     fun scanForDevices(context: Context) {
+        if (!_uiState.value.scanEnabled) return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isScanning        = true,
-                discoveredDevices = emptyList(),
-                selectedDevice    = null,
-                errorMessage      = null
-            )
+            _uiState.value = _uiState.value.copy(isScanning = true, discoveredDevices = emptyList(), selectedDevice = null, errorMessage = null)
             try {
                 val scanner = WifiDeviceScanner(context)
                 val devices = withContext(Dispatchers.IO) { scanner.scanNetwork() }
@@ -202,10 +196,7 @@ class UploadViewModel @Inject constructor(
                     cloudSyncActive   = devices.isNotEmpty()
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isScanning   = false,
-                    errorMessage = "기기 탐색 실패: ${e.message}"
-                )
+                _uiState.value = _uiState.value.copy(isScanning = false, errorMessage = "기기 탐색 실패: ${e.message}")
             }
         }
     }
@@ -225,69 +216,39 @@ class UploadViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(errorMessage = "전송할 파일을 선택해주세요")
             return
         }
-
-        val filePairs: List<Pair<Uri, String>> = state.allFiles
-            .filter { it.id in state.selectedFiles }
-            .map { Uri.parse(it.uri) to it.name }
+        val filePairs = state.allFiles.filter { it.id in state.selectedFiles }.map { Uri.parse(it.uri) to it.name }
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
-                isUploading    = true,
-                uploadTotal    = filePairs.size,
-                uploadCurrent  = 0,
-                successCount   = 0,
-                duplicateCount = 0,
-                failedCount    = 0,
-                isUploadDone   = false,
-                errorMessage   = null
+                isUploading = true, uploadTotal = filePairs.size, uploadCurrent = 0,
+                successCount = 0, duplicateCount = 0, failedCount = 0,
+                isUploadDone = false, errorMessage = null
             )
 
-            transferManager.transferFiles(
-                context          = context,
-                files            = filePairs,
-                receiverIp       = receiverIp,
-                sourceDeviceName = android.os.Build.MODEL
-            ).collect { event ->
-                when (event) {
-                    is TransferEvent.Started -> {
-                        _uiState.value = _uiState.value.copy(
-                            currentUploadFile = event.fileName,
-                            uploadCurrent     = event.current
-                        )
+            transferManager.transferFiles(context, filePairs, receiverIp, android.os.Build.MODEL)
+                .collect { event ->
+                    when (event) {
+                        is TransferEvent.Started   -> _uiState.value = _uiState.value.copy(currentUploadFile = event.fileName, uploadCurrent = event.current)
+                        is TransferEvent.Completed -> _uiState.value = _uiState.value.copy(successCount = _uiState.value.successCount + 1)
+                        is TransferEvent.Duplicate -> _uiState.value = _uiState.value.copy(duplicateCount = _uiState.value.duplicateCount + 1)
+                        is TransferEvent.Failed    -> _uiState.value = _uiState.value.copy(failedCount = _uiState.value.failedCount + 1)
+                        is TransferEvent.AllDone   -> {
+                            val final = _uiState.value
+                            _uiState.value = final.copy(isUploading = false, isUploadDone = true, selectedFiles = emptySet())
+                            // ✅ 알림 설정값 읽어서 전달
+                            val prefs     = context.dataStore.data.first()
+                            val showNotif = prefs[booleanPreferencesKey("show_notification")] ?: true
+                            NotificationHelper.showTransferComplete(
+                                context        = context,
+                                successCount   = final.successCount,
+                                duplicateCount = final.duplicateCount,
+                                failedCount    = final.failedCount,
+                                enabled        = showNotif
+                            )
+                        }
+                        else -> {}
                     }
-                    is TransferEvent.Completed -> {
-                        _uiState.value = _uiState.value.copy(
-                            successCount = _uiState.value.successCount + 1
-                        )
-                    }
-                    is TransferEvent.Duplicate -> {
-                        _uiState.value = _uiState.value.copy(
-                            duplicateCount = _uiState.value.duplicateCount + 1
-                        )
-                    }
-                    is TransferEvent.Failed -> {
-                        _uiState.value = _uiState.value.copy(
-                            failedCount = _uiState.value.failedCount + 1
-                        )
-                    }
-                    is TransferEvent.AllDone -> {
-                        val final = _uiState.value
-                        _uiState.value = final.copy(
-                            isUploading   = false,
-                            isUploadDone  = true,
-                            selectedFiles = emptySet()
-                        )
-                        // ✅ 포그라운드/백그라운드 무관하게 알림 표시
-                        NotificationHelper.showTransferComplete(
-                            context        = context,
-                            successCount   = final.successCount,
-                            duplicateCount = final.duplicateCount,
-                            failedCount    = final.failedCount
-                        )
-                    }
-                    else -> {}
                 }
-            }
         }
     }
 
