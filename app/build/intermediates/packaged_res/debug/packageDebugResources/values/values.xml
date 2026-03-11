@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Photo Transfer</string>
+    <string name="nav_history">History</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_upload">Upload</string>
+    <style name="Theme.PhotoTransfer" parent="android:Theme.Material.Light.NoActionBar"/>
+</resources>
