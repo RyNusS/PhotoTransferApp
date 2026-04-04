@@ -20,9 +20,10 @@ import java.net.Socket
 private const val TAG = "TransferServer"
 
 data class ReceivedFile(
-    val fileName:  String,
-    val savedPath: String,
-    val fileSize:  Long
+    val fileName:     String,
+    val savedPath:    String,
+    val fileSize:     Long,
+    val sourceDevice: String = ""   // ✅ 송신 기기명
 )
 
 class TransferServer(
@@ -100,12 +101,14 @@ class TransferServer(
                 val input  = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
 
-                // 메타데이터 수신
-                val fileName = input.readUTF()
-                val fileSize = input.readLong()
-                val fileHash = input.readUTF()
+                // 메타데이터 수신 (fileName, fileSize, fileHash, sourceDevice)
+                val fileName     = input.readUTF()
+                val fileSize     = input.readLong()
+                val fileHash     = input.readUTF()
+                // ✅ 기기명 수신 (구버전 클라이언트 호환: 없으면 빈 문자열)
+                val sourceDevice = try { input.readUTF() } catch (e: Exception) { "" }
 
-                Log.d(TAG, "수신 시작: $fileName ($fileSize bytes)")
+                Log.d(TAG, "수신 시작: $fileName ($fileSize bytes) from $sourceDevice")
 
                 // ✅ Android 버전에 따라 저장 방식 분기
                 val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && context != null) {
@@ -125,7 +128,8 @@ class TransferServer(
                 output.flush()
 
                 Log.d(TAG, "수신 완료: ${result.savedPath} (${result.fileSize} bytes)")
-                onFileReceived(result)
+                // ✅ sourceDevice 포함해서 콜백 호출
+                onFileReceived(result.copy(sourceDevice = sourceDevice))
 
             } catch (e: Exception) {
                 Log.e(TAG, "파일 수신 오류: ${e.javaClass.simpleName} - ${e.message}")

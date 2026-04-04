@@ -77,12 +77,13 @@ class TransferManager @Inject constructor(
                 val result = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { stream ->
                         client.sendStream(
-                            inputStream = stream,
-                            fileSize    = fileSize,
-                            fileHash    = fileHash,
-                            fileName    = fileName,
-                            receiverIp  = receiverIp,
-                            onProgress  = { progress ->
+                            inputStream  = stream,
+                            fileSize     = fileSize,
+                            fileHash     = fileHash,
+                            fileName     = fileName,
+                            receiverIp   = receiverIp,
+                            sourceDevice = sourceDeviceName,  // ✅ 기기명 전달
+                            onProgress   = { progress ->
                                 // 진행률은 TransferEvent.Progress로 emit 불가(flow 외부)
                                 // UploadViewModel에서 uploadProgress 별도 관리
                             }

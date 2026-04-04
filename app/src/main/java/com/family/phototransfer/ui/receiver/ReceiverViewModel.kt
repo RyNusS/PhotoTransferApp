@@ -112,22 +112,24 @@ class ReceiverViewModel @Inject constructor(
                             statusMessage = "수신 완료: ${received.fileName}"
                         )
 
-                        // 수신 기록 DB 저장
-                        viewModelScope.launch {
+                        // ✅ 독립 코루틴으로 DB 저장 (IO 블로킹 안에서 viewModelScope 금지)
+                        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                             repository.recordReceived(
                                 fileName   = received.fileName,
                                 fileSize   = received.fileSize,
-                                fromDevice = "송신 기기"
+                                fromDevice = received.sourceDevice.ifBlank { "송신 기기" }
                             )
                         }
 
-                        // ✅ show_notification 설정 확인 후 알림
-                        viewModelScope.launch {
-                            val prefs        = context.dataStore.data.first()
-                            val showNotif    = prefs[booleanPreferencesKey("show_notification")] ?: true
-                            if (showNotif) {
-                                NotificationHelper.showReceiveComplete(context, received.fileName)
-                            }
+                        // ✅ 독립 코루틴으로 알림 처리
+                        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                            val prefs     = context.dataStore.data.first()
+                            val showNotif = prefs[booleanPreferencesKey("notify_on_receive")] ?: true
+                            NotificationHelper.showReceiveComplete(
+                                context  = context,
+                                fileName = received.fileName,
+                                enabled  = showNotif
+                            )
                         }
                     },
                     onError = { errorMsg ->

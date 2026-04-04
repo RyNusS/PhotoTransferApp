@@ -30,12 +30,13 @@ class TransferClient {
      * → 동영상 등 대용량 파일도 OOM 없이 안정적으로 전송 가능
      */
     suspend fun sendStream(
-        inputStream: InputStream,
-        fileSize:    Long,
-        fileHash:    String,
-        fileName:    String,
-        receiverIp:  String,
-        onProgress:  (Float) -> Unit = {}
+        inputStream:  InputStream,
+        fileSize:     Long,
+        fileHash:     String,
+        fileName:     String,
+        receiverIp:   String,
+        sourceDevice: String = android.os.Build.MODEL,  // ✅ 기기명 추가
+        onProgress:   (Float) -> Unit = {}
     ): TransferResult = withContext(Dispatchers.IO) {
 
         val isVideo = isVideoFileName(fileName)
@@ -51,10 +52,11 @@ class TransferClient {
                 val output = DataOutputStream(socket.getOutputStream().buffered(CHUNK_SIZE))
                 val input  = DataInputStream(socket.getInputStream())
 
-                // 메타데이터 전송
+                // 메타데이터 전송 (fileName, fileSize, fileHash, sourceDevice)
                 output.writeUTF(fileName)
                 output.writeLong(fileSize)
                 output.writeUTF(fileHash)
+                output.writeUTF(sourceDevice)   // ✅ 기기명 전송
                 output.flush()
 
                 // 스트리밍 청크 전송 (메모리에 전체를 올리지 않음)

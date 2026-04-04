@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- ✅ 정확한 알람 시각 지정 (Android 12+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
         android:name=".PhotoTransferApp"
@@ -55,6 +57,12 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- ✅ 자동 동기화 알람 수신 -->
+        <receiver
+            android:name=".scheduler.SyncAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
         <!-- WorkManager가 자체 초기화하지 않도록 비활성화 (HiltWorkerFactory 사용) -->
         <provider

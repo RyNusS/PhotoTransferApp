@@ -8,6 +8,7 @@ import androidx.work.*
 import com.family.phototransfer.network.TransferEvent
 import com.family.phototransfer.network.TransferManager
 import com.family.phototransfer.network.WifiDeviceScanner
+import com.family.phototransfer.util.NotificationHelper
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -17,10 +18,11 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "AutoSyncWorker"
 
-// WorkManager Input Data 키
-const val KEY_RECEIVER_IP     = "receiver_ip"
-const val KEY_SYNC_DAYS_BACK  = "sync_days_back"   // 며칠 전 사진까지 동기화할지
-const val KEY_WIFI_ONLY       = "wifi_only"
+const val KEY_RECEIVER_IP    = "receiver_ip"
+const val KEY_SYNC_FROM_DATE = "sync_from_date"   // "YYYY-MM-DD", "ALL", "RECENT_3", "RECENT_7"
+const val KEY_SYNC_FOLDERS   = "sync_folders"     // "path1|path2|..." (빈 문자열 = 전체)
+const val KEY_WIFI_ONLY      = "wifi_only"
+const val KEY_NOTIFY_ON_SEND = "notify_on_send"
 
 @HiltWorker
 class AutoSyncWorker @AssistedInject constructor(
@@ -39,29 +41,37 @@ class AutoSyncWorker @AssistedInject constructor(
                 return Result.retry()
             }
 
-            // 2) 수신 기기(픽셀1) 탐색
+            // 2) 수신 기기 IP 결정
             val receiverIp = findReceiverDevice()
             if (receiverIp == null) {
                 Log.d(TAG, "수신 기기 없음 - 동기화 건너뜀")
                 return Result.retry()
             }
 
-            // 3) 동기화할 사진 목록 조회
-            val daysBack = inputData.getInt(KEY_SYNC_DAYS_BACK, 30)
-            val mediaFiles = getRecentMediaFiles(daysBack)
+            // 3) 동기화 조건 읽기
+            val syncFromDate   = inputData.getString(KEY_SYNC_FROM_DATE) ?: "ALL"
+            val syncFolderRaw  = inputData.getString(KEY_SYNC_FOLDERS)   ?: ""
+            // ✅ 활성화된 폴더 경로 목록 (비어있으면 전체 폴더)
+            val allowedFolders = if (syncFolderRaw.isBlank()) emptySet()
+                                 else syncFolderRaw.split("|").filter { it.isNotBlank() }.toSet()
+
+            Log.d(TAG, "동기화 조건 - 날짜: $syncFromDate, 폴더: ${allowedFolders.ifEmpty { setOf("전체") }}")
+
+            // 4) ✅ 날짜 + 폴더 필터 적용한 파일 조회
+            val mediaFiles = getMediaFiles(syncFromDate, allowedFolders)
 
             if (mediaFiles.isEmpty()) {
                 Log.d(TAG, "동기화할 파일 없음")
                 return Result.success()
             }
 
-            Log.d(TAG, "동기화 대상 파일: ${mediaFiles.size}개")
+            Log.d(TAG, "동기화 대상: ${mediaFiles.size}개")
 
-            // 4) 전송 실행
+            // 5) 전송 실행
             val events = transferManager.transferFiles(
-                context        = context,
-                files          = mediaFiles,
-                receiverIp     = receiverIp,
+                context          = context,
+                files            = mediaFiles,
+                receiverIp       = receiverIp,
                 sourceDeviceName = android.os.Build.MODEL
             ).toList()
 
@@ -69,9 +79,18 @@ class AutoSyncWorker @AssistedInject constructor(
             val duplicateCount = events.count { it is TransferEvent.Duplicate }
             val failedCount    = events.count { it is TransferEvent.Failed }
 
-            Log.d(TAG, "동기화 완료 - 성공: $successCount, 중복: $duplicateCount, 실패: $failedCount")
+            Log.d(TAG, "완료 - 성공: $successCount, 중복: $duplicateCount, 실패: $failedCount")
 
-            // 실패가 있어도 일부 성공이면 success (다음 주기에 재시도)
+            // 6) ✅ 알림 표시
+            val notifyEnabled = inputData.getBoolean(KEY_NOTIFY_ON_SEND, true)
+            NotificationHelper.showTransferComplete(
+                context        = context,
+                successCount   = successCount,
+                duplicateCount = duplicateCount,
+                failedCount    = failedCount,
+                enabled        = notifyEnabled
+            )
+
             Result.success(
                 workDataOf(
                     "success_count"   to successCount,
@@ -86,155 +105,174 @@ class AutoSyncWorker @AssistedInject constructor(
         }
     }
 
-    // WiFi 연결 여부 확인
     private fun isWifiConnected(): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE)
-            as android.net.ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    // 수신 기기 탐색 (저장된 IP 우선, 없으면 스캔)
     private suspend fun findReceiverDevice(): String? {
-        // 설정에 저장된 IP가 있으면 먼저 시도
         val savedIp = inputData.getString(KEY_RECEIVER_IP)
-        if (!savedIp.isNullOrEmpty()) {
-            Log.d(TAG, "저장된 IP 사용: $savedIp")
-            return savedIp
-        }
-
-        // 없으면 네트워크 스캔
+        if (!savedIp.isNullOrEmpty()) return savedIp
         return withContext(Dispatchers.IO) {
-            val scanner = WifiDeviceScanner(context)
-            val devices = scanner.scanNetwork()
-            devices.firstOrNull()?.ipAddress
+            WifiDeviceScanner(context).scanNetwork().firstOrNull()?.ipAddress
         }
     }
 
-    // 최근 N일 이내 미디어 파일 조회
-    private suspend fun getRecentMediaFiles(daysBack: Int): List<Pair<android.net.Uri, String>> {
-        return withContext(Dispatchers.IO) {
-            val result = mutableListOf<Pair<android.net.Uri, String>>()
-            val cutoffTime = System.currentTimeMillis() / 1000 - (daysBack * 24 * 60 * 60L)
+    // ✅ 날짜 + 폴더 필터링 통합 쿼리
+    private suspend fun getMediaFiles(
+        syncFromDate:   String,
+        allowedFolders: Set<String>
+    ): List<Pair<android.net.Uri, String>> = withContext(Dispatchers.IO) {
 
-            // 사진
-            val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            context.contentResolver.query(
-                imageUri,
-                arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME),
-                "${MediaStore.Images.Media.DATE_MODIFIED} >= ?",
-                arrayOf(cutoffTime.toString()),
-                "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
-            )?.use { cursor ->
-                val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                while (cursor.moveToNext()) {
-                    val id   = cursor.getLong(idCol)
-                    val name = cursor.getString(nameCol)
-                    result.add(android.net.Uri.parse("$imageUri/$id") to name)
-                }
-            }
+        val result = mutableListOf<Pair<android.net.Uri, String>>()
 
-            // 동영상
-            val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            context.contentResolver.query(
-                videoUri,
-                arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME),
-                "${MediaStore.Video.Media.DATE_MODIFIED} >= ?",
-                arrayOf(cutoffTime.toString()),
-                "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
-            )?.use { cursor ->
-                val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                while (cursor.moveToNext()) {
-                    val id   = cursor.getLong(idCol)
-                    val name = cursor.getString(nameCol)
-                    result.add(android.net.Uri.parse("$videoUri/$id") to name)
-                }
-            }
-
-            result
+        // 날짜 조건 계산
+        val cutoffMillis: Long? = when (syncFromDate) {
+            "ALL"      -> null
+            "RECENT_3" -> System.currentTimeMillis() - (2 * 24 * 60 * 60 * 1000L)
+            "RECENT_7" -> System.currentTimeMillis() - (6 * 24 * 60 * 60 * 1000L)
+            else       -> runCatching {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                sdf.parse(syncFromDate)?.time
+            }.getOrNull()
         }
+        // MediaStore DATE_MODIFIED는 초 단위
+        val cutoffSec = cutoffMillis?.let { it / 1000 }
+
+        // 날짜 조건 쿼리 문자열
+        val dateSelection   = cutoffSec?.let { "${MediaStore.MediaColumns.DATE_MODIFIED} >= ?" }
+        val dateSelectionArgs = cutoffSec?.let { arrayOf(it.toString()) }
+
+        // 사진 + 동영상 각각 쿼리
+        listOf(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        ).forEach { baseUri ->
+            context.contentResolver.query(
+                baseUri,
+                arrayOf(
+                    MediaStore.MediaColumns._ID,
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATA          // 파일 경로 (폴더 필터용)
+                ),
+                dateSelection,
+                dateSelectionArgs,
+                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+            )?.use { cursor ->
+                val idCol   = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+
+                while (cursor.moveToNext()) {
+                    val id       = cursor.getLong(idCol)
+                    val name     = cursor.getString(nameCol) ?: continue
+                    val filePath = cursor.getString(dataCol) ?: continue
+                    val folder   = java.io.File(filePath).parent ?: continue
+
+                    // ✅ 폴더 필터: allowedFolders가 비어있으면 전체, 있으면 해당 폴더만
+                    if (allowedFolders.isEmpty() || folder in allowedFolders) {
+                        result.add(android.net.Uri.parse("$baseUri/$id") to name)
+                    }
+                }
+            }
+        }
+        result
     }
 }
 
-// ── 스케줄러 설정 헬퍼 ─────────────────────────────────────────
+// ── 스케줄러 헬퍼 ──────────────────────────────────────────────
 object AutoSyncScheduler {
 
     private const val WORK_NAME = "auto_sync_work"
 
     /**
-     * 정기 자동 동기화 등록
-     * @param intervalHours 동기화 주기 (시간 단위, 최소 15분)
-     * @param receiverIp    픽셀1 IP (비어있으면 매번 자동 탐색)
-     * @param daysBack      며칠 전 사진까지 동기화
+     * ✅ 시작 시각(hour, minute)을 반영한 정기 동기화 등록
+     * WorkManager는 정확한 시각 보장이 안 되므로
+     * initialDelay로 첫 실행을 다음 지정 시각에 맞춤
      */
     fun schedule(
-        context: Context,
-        intervalHours: Int = 24,
-        receiverIp: String = "",
-        daysBack: Int = 30,
-        wifiOnly: Boolean = true
+        context:       Context,
+        intervalHours: Int    = 24,
+        startHour:     Int    = 8,
+        startMinute:   Int    = 0,
+        receiverIp:    String = "",
+        syncFromDate:  String = "ALL",
+        syncFolders:   String = "",     // "path1|path2|..." 활성 폴더만
+        notifyOnSend:  Boolean = true,
+        wifiOnly:      Boolean = true
     ) {
         val constraints = Constraints.Builder()
             .apply {
-                if (wifiOnly) setRequiredNetworkType(NetworkType.UNMETERED) // WiFi 전용
-                setRequiresBatteryNotLow(true)  // 배터리 부족 시 중지
+                if (wifiOnly) setRequiredNetworkType(NetworkType.UNMETERED)
+                setRequiresBatteryNotLow(true)
             }
             .build()
 
         val inputData = workDataOf(
             KEY_RECEIVER_IP    to receiverIp,
-            KEY_SYNC_DAYS_BACK to daysBack,
+            KEY_SYNC_FROM_DATE to syncFromDate,
+            KEY_SYNC_FOLDERS   to syncFolders,
+            KEY_NOTIFY_ON_SEND to notifyOnSend,
             KEY_WIFI_ONLY      to wifiOnly
         )
+
+        // ✅ 다음 지정 시각까지 대기 시간 계산
+        val initialDelay = calcInitialDelay(startHour, startMinute)
+        Log.d("AutoSyncScheduler", "다음 동기화까지 ${initialDelay / 60000}분 후 (${startHour}:${"%02d".format(startMinute)})")
 
         val workRequest = PeriodicWorkRequestBuilder<AutoSyncWorker>(
             intervalHours.toLong(), TimeUnit.HOURS
         )
             .setConstraints(constraints)
             .setInputData(inputData)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,  // 설정 변경 시 기존 작업 업데이트
+            ExistingPeriodicWorkPolicy.UPDATE,
             workRequest
         )
     }
 
-    /**
-     * 즉시 1회 동기화 실행 (테스트 또는 수동 트리거용)
-     */
+    /** 다음 지정 시각(hour:minute)까지의 밀리초 계산 */
+    private fun calcInitialDelay(hour: Int, minute: Int): Long {
+        val now = java.util.Calendar.getInstance()
+        val target = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, hour)
+            set(java.util.Calendar.MINUTE, minute)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        // 이미 지난 시각이면 다음 날로
+        if (target.before(now)) target.add(java.util.Calendar.DAY_OF_YEAR, 1)
+        return target.timeInMillis - now.timeInMillis
+    }
+
     fun runOnce(
-        context: Context,
-        receiverIp: String = "",
-        daysBack: Int = 30
+        context:      Context,
+        receiverIp:   String = "",
+        syncFromDate: String = "ALL",
+        syncFolders:  String = "",
+        notifyOnSend: Boolean = true
     ) {
-        val inputData = workDataOf(
-            KEY_RECEIVER_IP    to receiverIp,
-            KEY_SYNC_DAYS_BACK to daysBack
-        )
-
         val workRequest = OneTimeWorkRequestBuilder<AutoSyncWorker>()
-            .setInputData(inputData)
+            .setInputData(workDataOf(
+                KEY_RECEIVER_IP    to receiverIp,
+                KEY_SYNC_FROM_DATE to syncFromDate,
+                KEY_SYNC_FOLDERS   to syncFolders,
+                KEY_NOTIFY_ON_SEND to notifyOnSend
+            ))
             .build()
-
         WorkManager.getInstance(context).enqueue(workRequest)
     }
 
-    /**
-     * 자동 동기화 취소
-     */
     fun cancel(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
     }
 
-    /**
-     * 현재 스케줄 상태 확인
-     */
     fun getStatus(context: Context) =
         WorkManager.getInstance(context).getWorkInfosForUniqueWorkLiveData(WORK_NAME)
 }
