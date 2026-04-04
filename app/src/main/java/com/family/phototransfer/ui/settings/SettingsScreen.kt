@@ -555,6 +555,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }
 
         item { Spacer(Modifier.height(16.dp)) }
+
+        // ── 앱 버전 ────────────────────────────────────────────
+        item {
+            Text(
+                text     = "v2.0",
+                color    = TextSecondary.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -43,17 +44,48 @@ class TransferForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
-        // 포그라운드 서비스 알림 즉시 표시 (ANR 방지)
         startForeground(NOTIFICATION_ID, buildNotification("수신 대기 중..."))
 
         when (intent?.action) {
             ACTION_START_RECEIVER -> startReceiver()
             ACTION_STOP_RECEIVER  -> stopReceiver()
-            else                  -> startReceiver()  // 기본 동작: 수신 시작
+            else                  -> {
+                // ✅ 방어 로직 3: START_STICKY로 재시작 시 (intent=null)
+                // 이전에 IS_PENDING 상태로 남은 파일 정리 후 서버 재시작
+                Log.d(TAG, "서비스 재시작 (STICKY) - IS_PENDING 파일 정리 후 서버 시작")
+                cleanupPendingFiles()
+                startReceiver()
+            }
         }
 
-        // START_STICKY: 시스템이 서비스를 종료해도 자동 재시작
         return START_STICKY
+    }
+
+    /**
+     * IS_PENDING=1 상태로 남은 미완성 파일 정리
+     * 앱이 수신 중 강제 종료됐을 때 좀비 파일 제거
+     */
+    private fun cleanupPendingFiles() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val selection = "${android.provider.MediaStore.MediaColumns.IS_PENDING} = 1"
+                // 사진
+                val deletedImages = contentResolver.delete(
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    selection, null
+                )
+                // 동영상
+                val deletedVideos = contentResolver.delete(
+                    android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    selection, null
+                )
+                if (deletedImages + deletedVideos > 0) {
+                    Log.d(TAG, "IS_PENDING 파일 정리: 사진 ${deletedImages}개, 동영상 ${deletedVideos}개 삭제")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "IS_PENDING 정리 오류: ${e.message}")
+        }
     }
 
     private fun startReceiver() {

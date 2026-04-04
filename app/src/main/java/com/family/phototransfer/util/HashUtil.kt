@@ -3,32 +3,37 @@ package com.family.phototransfer.util
 import java.io.InputStream
 import java.security.MessageDigest
 
-/**
- * SHA-256 해시 유틸리티
- * - ByteArray 버전 (기존 호환)
- * - InputStream 버전 (스트리밍 전송 지원, OOM 방지)
- */
 object HashUtil {
 
-    /**
-     * ByteArray → SHA-256 (기존 코드 호환용)
-     */
     fun sha256(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(bytes).toHexString()
     }
 
-    /**
-     * InputStream → SHA-256 (대용량 파일도 OOM 없이 처리)
-     * 스트림을 읽으면서 해시를 계산하므로 메모리 사용량이 일정함
-     */
     fun sha256(stream: InputStream): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(65_536) // 64KB 버퍼
+        val buffer = ByteArray(65_536)
         var bytesRead: Int
         while (stream.read(buffer).also { bytesRead = it } != -1) {
             digest.update(buffer, 0, bytesRead)
         }
+        return digest.digest().toHexString()
+    }
+
+    /**
+     * InputStream을 읽으면서 동시에 SHA-256 해시를 계산하고
+     * 읽은 데이터를 outputStream으로 흘려보내는 TeeStream
+     * → 해시 계산과 전송을 한 번의 스트림으로 처리
+     */
+    fun sha256WithTee(input: InputStream, output: java.io.OutputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(65_536)
+        var bytesRead: Int
+        while (input.read(buffer).also { bytesRead = it } != -1) {
+            digest.update(buffer, 0, bytesRead)
+            output.write(buffer, 0, bytesRead)
+        }
+        output.flush()
         return digest.digest().toHexString()
     }
 

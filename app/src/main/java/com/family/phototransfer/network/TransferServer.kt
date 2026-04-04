@@ -54,7 +54,15 @@ class TransferServer(
                 try {
                     val clientSocket = serverSocket?.accept() ?: break
                     Log.d(TAG, "클라이언트 연결: ${clientSocket.inetAddress.hostAddress}")
-                    handleClient(clientSocket)
+                    // ✅ 방어 로직 2: 각 클라이언트를 독립 스레드로 처리
+                    // → 한 파일 처리 중 오류가 나도 서버 루프 전체가 죽지 않음
+                    Thread {
+                        try {
+                            handleClient(clientSocket)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "클라이언트 스레드 오류: ${e.message}")
+                        }
+                    }.apply { isDaemon = true }.start()
                 } catch (e: Exception) {
                     if (isRunning) {
                         Log.e(TAG, "클라이언트 처리 오류: ${e.message}")
@@ -97,20 +105,26 @@ class TransferServer(
     private fun handleClient(socket: Socket) {
         socket.use {
             try {
-                socket.soTimeout = TRANSFER_TIMEOUT_MS
+                // 메타데이터 수신 (짧은 타임아웃)
+                socket.soTimeout = 15_000
                 val input  = DataInputStream(socket.getInputStream())
                 val output = DataOutputStream(socket.getOutputStream())
 
-                // 메타데이터 수신 (fileName, fileSize, fileHash, sourceDevice)
+                // 1) 메타데이터 수신
                 val fileName     = input.readUTF()
                 val fileSize     = input.readLong()
-                val fileHash     = input.readUTF()
-                // ✅ 기기명 수신 (구버전 클라이언트 호환: 없으면 빈 문자열)
+                input.readUTF()  // 해시 자리 (빈 문자열, 미사용)
                 val sourceDevice = try { input.readUTF() } catch (e: Exception) { "" }
 
-                Log.d(TAG, "수신 시작: $fileName ($fileSize bytes) from $sourceDevice")
+                // 동영상 여부에 따라 타임아웃 재설정
+                val isVideo = fileName.lowercase().let {
+                    it.endsWith(".mp4") || it.endsWith(".mov") || it.endsWith(".avi") ||
+                    it.endsWith(".mkv") || it.endsWith(".3gp") || it.endsWith(".m4v")
+                }
+                socket.soTimeout = if (isVideo) 300_000 else 60_000
+                Log.d(TAG, "수신 시작: $fileName ($fileSize bytes, video=$isVideo) from $sourceDevice")
 
-                // ✅ Android 버전에 따라 저장 방식 분기
+                // 2) 파일 저장
                 val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && context != null) {
                     saveViaMediaStore(input, fileName, fileSize, context)
                 } else {
@@ -126,17 +140,14 @@ class TransferServer(
 
                 output.writeUTF("OK")
                 output.flush()
-
-                Log.d(TAG, "수신 완료: ${result.savedPath} (${result.fileSize} bytes)")
-                // ✅ sourceDevice 포함해서 콜백 호출
+                Log.d(TAG, "수신 완료: $fileName (${result.fileSize} bytes)")
                 onFileReceived(result.copy(sourceDevice = sourceDevice))
 
             } catch (e: Exception) {
                 Log.e(TAG, "파일 수신 오류: ${e.javaClass.simpleName} - ${e.message}")
                 try {
                     DataOutputStream(socket.getOutputStream()).apply {
-                        writeUTF("ERROR")
-                        flush()
+                        writeUTF("ERROR"); flush()
                     }
                 } catch (_: Exception) {}
                 onError("파일 수신 오류: ${e.message}")
@@ -154,6 +165,7 @@ class TransferServer(
         fileSize: Long,
         ctx:      Context
     ): ReceivedFile? {
+        var uri: android.net.Uri? = null
         return try {
             val mimeType = guessMimeType(fileName)
             val isVideo  = mimeType.startsWith("video")
@@ -166,18 +178,17 @@ class TransferServer(
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE,    mimeType)
-                // API 29+ → Pictures/PhotoTransfer 하위 폴더
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     put(
                         MediaStore.MediaColumns.RELATIVE_PATH,
-                        if (isVideo) Environment.DIRECTORY_PICTURES
+                        if (isVideo) Environment.DIRECTORY_MOVIES
                         else         Environment.DIRECTORY_PICTURES
                     )
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
             }
 
-            val uri = ctx.contentResolver.insert(contentUri, values)
+            uri = ctx.contentResolver.insert(contentUri, values)
                 ?: return null
 
             var received = 0L
@@ -185,7 +196,7 @@ class TransferServer(
                 received = copyStream(input, outputStream, fileSize)
             }
 
-            // IS_PENDING 해제 → 갤러리/구글포토에서 즉시 표시
+            // 수신 완료 → IS_PENDING 해제
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
@@ -193,14 +204,19 @@ class TransferServer(
             }
 
             Log.d(TAG, "MediaStore 저장 완료: $uri")
+            ReceivedFile(fileName = fileName, savedPath = uri.toString(), fileSize = received)
 
-            ReceivedFile(
-                fileName  = fileName,
-                savedPath = uri.toString(),
-                fileSize  = received
-            )
         } catch (e: Exception) {
             Log.e(TAG, "MediaStore 저장 오류: ${e.message}")
+            // ✅ 방어 로직 1: 저장 실패 시 IS_PENDING 파일 즉시 삭제 (좀비 파일 방지)
+            uri?.let {
+                try {
+                    ctx.contentResolver.delete(it, null, null)
+                    Log.d(TAG, "실패한 IS_PENDING 파일 삭제: $it")
+                } catch (de: Exception) {
+                    Log.e(TAG, "IS_PENDING 파일 삭제 실패: ${de.message}")
+                }
+            }
             null
         }
     }
