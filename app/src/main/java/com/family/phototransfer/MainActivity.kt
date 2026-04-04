@@ -157,6 +157,11 @@ fun PhotoTransferNavHost(receiverStateHolder: ReceiverStateHolder) {
                     onNavigateToMode = { mode ->
                         selectedMode = mode
                         val target = if (mode == "upload") Screen.Upload else Screen.Receiver
+                        // Receiver 탭으로 이동할 때 자동 수신 시작 플래그 설정
+                        if (mode == "receiver") {
+                            navController.currentBackStackEntry
+                                ?.savedStateHandle?.set("auto_start_receiver", true)
+                        }
                         navController.navigate(target.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
@@ -181,7 +186,15 @@ fun PhotoTransferNavHost(receiverStateHolder: ReceiverStateHolder) {
 
             // ── Receiver 탭 ───────────────────────────────────
             composable(Screen.Receiver.route) {
-                ReceiverScreen()
+                // Home 탭 → Switch to Receiver 버튼으로 넘어온 경우 자동 수신 시작
+                val autoStart = navController.previousBackStackEntry
+                    ?.savedStateHandle?.get<Boolean>("auto_start_receiver") ?: false
+                // 한 번 읽은 후 초기화
+                LaunchedEffect(Unit) {
+                    navController.currentBackStackEntry
+                        ?.savedStateHandle?.remove<Boolean>("auto_start_receiver")
+                }
+                ReceiverScreen(autoStart = autoStart)
             }
 
             composable(Screen.History.route)  { HistoryScreen() }

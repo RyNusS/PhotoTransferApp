@@ -24,12 +24,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -471,63 +469,89 @@ fun MediaGrid(
     onToggleSelect: (Long) -> Unit,
     onDragSelect: (Set<Long>) -> Unit
 ) {
-    // 각 아이템의 화면상 위치를 기록 (드래그 히트 테스트용)
-    val itemPositions = remember { mutableStateMapOf<Int, Pair<Offset, Offset>>() } // index → (topLeft, bottomRight)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val spacing = if (columns == 5) 2.dp else 3.dp
+    val padding = 16.dp
 
-    // 드래그 시작 시 선택 상태 스냅샷 (drag 중 토글 기준점)
-    var dragStartSelectedIds by remember { mutableStateOf<Set<Long>?>(null) }
-    var isDragging by remember { mutableStateOf(false) }
+    // 그리드 너비 측정용
+    var gridWidthPx by remember { mutableStateOf(0) }
+
+    // 드래그 시작 시 선택 스냅샷
+    var dragStartIndex     by remember { mutableStateOf(-1) }
+    var dragCurrentIndex   by remember { mutableStateOf(-1) }
+    var dragStartSelected  by remember { mutableStateOf<Set<Long>>(emptySet()) }
+
+    // 드래그 범위(시작~현재) 인덱스 → 선택 ID 계산
+    fun indicesInRange(a: Int, b: Int): Set<Long> {
+        if (a < 0 || b < 0) return emptySet()
+        val lo = minOf(a, b)
+        val hi = maxOf(a, b)
+        return (lo..hi).mapNotNull { files.getOrNull(it)?.id }.toSet()
+    }
+
+    // 터치 좌표 → 그리드 인덱스 계산
+    fun posToIndex(x: Float, y: Float, scrollOffset: Float): Int {
+        if (gridWidthPx == 0) return -1
+        val paddingPx = with(density) { padding.toPx() }
+        val spacingPx = with(density) { spacing.toPx() }
+        val availWidth = gridWidthPx - paddingPx * 2
+        val cellW = (availWidth - spacingPx * (columns - 1)) / columns
+
+        val col = ((x - paddingPx) / (cellW + spacingPx)).toInt().coerceIn(0, columns - 1)
+        val row = ((y + scrollOffset - with(density) { 4.dp.toPx() }) / (cellW + spacingPx)).toInt()
+        if (row < 0) return -1
+        val idx = row * columns + col
+        return if (idx in files.indices) idx else -1
+    }
+
+    val lazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
 
     LazyVerticalGrid(
+        state   = lazyGridState,
         columns = GridCells.Fixed(columns),
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { gridWidthPx = it.size.width }
             .pointerInput(files, columns) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
-                        isDragging = true
-                        dragStartSelectedIds = selectedIds.toSet()
+                        val scrollOffset = lazyGridState.firstVisibleItemScrollOffset.toFloat() +
+                            lazyGridState.firstVisibleItemIndex * (size.width / columns).toFloat()
+                        dragStartIndex    = posToIndex(offset.x, offset.y, scrollOffset)
+                        dragCurrentIndex  = dragStartIndex
+                        dragStartSelected = selectedIds.toSet()
+                        if (dragStartIndex >= 0) {
+                            onDragSelect(dragStartSelected + indicesInRange(dragStartIndex, dragStartIndex))
+                        }
                     },
                     onDrag = { change, _ ->
-                        val pos = change.position
-                        val draggedIndices = itemPositions.entries
-                            .filter { (_, rect) ->
-                                pos.x >= rect.first.x && pos.x <= rect.second.x &&
-                                pos.y >= rect.first.y && pos.y <= rect.second.y
-                            }
-                            .map { it.key }
-
-                        if (draggedIndices.isNotEmpty()) {
-                            val draggedIds = draggedIndices
-                                .mapNotNull { files.getOrNull(it)?.id }
-                                .toSet()
-                            val base = dragStartSelectedIds ?: emptySet()
-                            // 드래그된 아이템들을 기준점에 추가
-                            onDragSelect(base + draggedIds)
+                        val scrollOffset = lazyGridState.firstVisibleItemScrollOffset.toFloat() +
+                            lazyGridState.firstVisibleItemIndex * (size.width / columns).toFloat()
+                        val newIndex = posToIndex(change.position.x, change.position.y, scrollOffset)
+                        if (newIndex >= 0 && newIndex != dragCurrentIndex) {
+                            dragCurrentIndex = newIndex
+                            onDragSelect(dragStartSelected + indicesInRange(dragStartIndex, dragCurrentIndex))
                         }
                     },
                     onDragEnd = {
-                        isDragging = false
-                        dragStartSelectedIds = null
+                        dragStartIndex   = -1
+                        dragCurrentIndex = -1
                     },
                     onDragCancel = {
-                        isDragging = false
-                        dragStartSelectedIds = null
+                        dragStartIndex   = -1
+                        dragCurrentIndex = -1
                     }
                 )
             },
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(if (columns == 5) 2.dp else 3.dp),
-        verticalArrangement = Arrangement.spacedBy(if (columns == 5) 2.dp else 3.dp)
+        contentPadding = PaddingValues(horizontal = padding, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+        verticalArrangement   = Arrangement.spacedBy(spacing)
     ) {
-        itemsIndexed(files, key = { _, file -> file.id }) { index, file ->
+        itemsIndexed(files, key = { _, file -> file.id }) { _, file ->
             MediaGridItem(
-                file = file,
+                file       = file,
                 isSelected = file.id in selectedIds,
-                onToggle = { onToggleSelect(file.id) },
-                onPositioned = { topLeft, bottomRight ->
-                    itemPositions[index] = topLeft to bottomRight
-                }
+                onToggle   = { onToggleSelect(file.id) }
             )
         }
     }
@@ -537,26 +561,20 @@ fun MediaGrid(
 fun MediaGridItem(
     file: MediaFileUi,
     isSelected: Boolean,
-    onToggle: () -> Unit,
-    onPositioned: (Offset, Offset) -> Unit = { _, _ -> }
+    onToggle: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(4.dp))
             .clickable { onToggle() }
-            .onGloballyPositioned { coords ->
-                val topLeft = coords.positionInRoot()
-                val size = coords.size
-                onPositioned(
-                    topLeft,
-                    Offset(topLeft.x + size.width, topLeft.y + size.height)
-                )
-            }
     ) {
+        // thumbnailUri 사용 (동영상은 MediaStore 썸네일, 사진은 원본)
         AsyncImage(
-            model = file.uri, contentDescription = file.name,
-            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+            model = android.net.Uri.parse(file.thumbnailUri),
+            contentDescription = file.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
         )
         if (file.isVideo) {
             Box(

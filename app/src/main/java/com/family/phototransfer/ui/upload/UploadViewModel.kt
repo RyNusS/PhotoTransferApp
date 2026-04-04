@@ -27,6 +27,7 @@ import javax.inject.Inject
 data class MediaFileUi(
     val id: Long,
     val uri: String,
+    val thumbnailUri: String,   // 썸네일 표시용 (동영상은 별도 썸네일 URI)
     val name: String,
     val size: Long,
     val isVideo: Boolean,
@@ -112,12 +113,20 @@ class UploadViewModel @Inject constructor(
                     arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE),
                     null, null, "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
                 )?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
                     val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
-                        result.add(MediaFileUi(id, "$imageUri/$id", cursor.getString(nameCol), cursor.getLong(sizeCol), false))
+                        val contentUri = "$imageUri/$id"
+                        result.add(MediaFileUi(
+                            id           = id,
+                            uri          = contentUri,
+                            thumbnailUri = contentUri,   // 사진은 원본 URI 그대로
+                            name         = cursor.getString(nameCol),
+                            size         = cursor.getLong(sizeCol),
+                            isVideo      = false
+                        ))
                     }
                 }
                 val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -126,13 +135,25 @@ class UploadViewModel @Inject constructor(
                     arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DURATION),
                     null, null, "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
                 )?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val idCol   = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
                     val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                    val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                    val durCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
-                        result.add(MediaFileUi(id, "$videoUri/$id", cursor.getString(nameCol), cursor.getLong(sizeCol), true, formatDuration(cursor.getLong(durCol))))
+                        // 동영상 썸네일: MediaStore Thumbnails URI 사용
+                        val thumbUri = android.net.Uri.withAppendedPath(
+                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "$id"
+                        ).toString()
+                        result.add(MediaFileUi(
+                            id           = id,
+                            uri          = "$videoUri/$id",
+                            thumbnailUri = thumbUri,
+                            name         = cursor.getString(nameCol),
+                            size         = cursor.getLong(sizeCol),
+                            isVideo      = true,
+                            duration     = formatDuration(cursor.getLong(durCol))
+                        ))
                     }
                 }
                 result.sortedByDescending { it.id }

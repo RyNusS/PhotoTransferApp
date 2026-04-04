@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.family.phototransfer.network.WifiDeviceScanner
 import com.family.phototransfer.scheduler.AutoSyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -56,9 +57,9 @@ data class SyncFolder(
 
 data class SettingsUiState(
     val autoSyncEnabled:   Boolean              = false,
-    val syncInterval:      SyncIntervalOption   = SyncIntervalOption.H24,  // ✅ 옵션 enum
-    val syncStartHour:     Int                  = 8,    // 0~23
-    val syncStartMinute:   Int                  = 0,    // ✅ 0 or 30
+    val syncInterval:      SyncIntervalOption   = SyncIntervalOption.H24,
+    val syncStartHour:     Int                  = 8,
+    val syncStartMinute:   Int                  = 0,
     val syncFromDate:      String               = "ALL",
     val pixelIpAddress:    String               = "",
     val skipDuplicates:    Boolean              = true,
@@ -68,11 +69,22 @@ data class SettingsUiState(
     val isSyncRunning:     Boolean              = false,
     val showDatePicker:    Boolean              = false,
     val showFolderPicker:  Boolean              = false,
-    val availableFolders:  List<SyncFolder>     = emptyList()
+    val availableFolders:  List<SyncFolder>     = emptyList(),
+    // ✅ 4번 - 기기 탐색
+    val isScanning:        Boolean              = false,
+    val discoveredDevices: List<com.family.phototransfer.network.DiscoveredDevice> = emptyList(),
+    val scanError:         String?              = null
 ) {
     val syncIntervalText: String get() = syncInterval.label
-    // ✅ 30분 단위 표시
-    val syncStartTimeText: String get() = "%02d:%02d".format(syncStartHour, syncStartMinute)
+    // AM/PM 12시간 표시
+    val syncStartAmPm: String get() = if (syncStartHour < 12) "AM" else "PM"
+    val syncStartHour12: Int get() = when (syncStartHour) {
+        0        -> 12
+        in 1..12 -> syncStartHour
+        else     -> syncStartHour - 12
+    }
+    val syncStartTimeText: String get() =
+        "%02d:%02d %s".format(syncStartHour12, syncStartMinute, syncStartAmPm)
     val syncFromDateText: String get() = when (syncFromDate) {
         "ALL"      -> "전체"
         "RECENT_3" -> "최근 3일"
@@ -157,6 +169,39 @@ class SettingsViewModel @Inject constructor(
 
     fun setPixelIp(ip: String) {
         viewModelScope.launch { save(Keys.PIXEL_IP, ip) }
+    }
+
+    // ✅ 4번 - 수신기기 WiFi 탐색
+    fun scanForDevices() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isScanning = true,
+                discoveredDevices = emptyList(),
+                scanError = null
+            )
+            try {
+                val scanner = WifiDeviceScanner(context)
+                val devices = withContext(Dispatchers.IO) { scanner.scanNetwork() }
+                _uiState.value = _uiState.value.copy(
+                    isScanning        = false,
+                    discoveredDevices = devices,
+                    scanError         = if (devices.isEmpty()) "수신 기기를 찾지 못했습니다" else null
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isScanning = false,
+                    scanError  = "탐색 실패: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // 탐색된 기기 선택 → IP 저장
+    fun selectDiscoveredDevice(ip: String) {
+        viewModelScope.launch {
+            save(Keys.PIXEL_IP, ip)
+            _uiState.value = _uiState.value.copy(discoveredDevices = emptyList())
+        }
     }
 
     fun setSkipDuplicates(skip: Boolean) {

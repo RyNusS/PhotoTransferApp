@@ -38,7 +38,8 @@ fun ReceiverScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     // autoStart=true이면 화면 진입 즉시 수신 시작
-    LaunchedEffect(autoStart) {
+    // Unit을 key로 사용해 최초 1회만 실행
+    LaunchedEffect(Unit) {
         if (autoStart && !uiState.isListening) {
             viewModel.startListening()
         }

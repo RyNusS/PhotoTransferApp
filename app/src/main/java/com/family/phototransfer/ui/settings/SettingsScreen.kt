@@ -83,7 +83,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 )
                 SectionDivider()
 
-                // ✅ 6번 - 동기화 시작 시각 (시간 0~23, 분 0/30)
+                // ── 동기화 시작 시각 (12시간제 + 00분/30분 + AM/PM) ──
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Schedule, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
@@ -91,22 +91,34 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         Text("동기화 시작 시각", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                         Text(uiState.syncStartTimeText, color = PrimaryBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    Spacer(Modifier.height(8.dp))
-                    // 시간 슬라이더 (0~23)
-                    Text("시각: ${uiState.syncStartHour}시", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(start = 32.dp))
+                    Spacer(Modifier.height(10.dp))
+                    // 시간 슬라이더 (1~12)
+                    Text("${uiState.syncStartHour12}시", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(start = 32.dp))
                     Slider(
-                        value         = uiState.syncStartHour.toFloat(),
-                        onValueChange = { viewModel.setSyncStartHour(it.toInt()) },
-                        valueRange    = 0f..23f,
-                        steps         = 22,
-                        modifier      = Modifier.padding(start = 32.dp),
-                        colors        = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue, inactiveTrackColor = CardBorder)
+                        value         = uiState.syncStartHour12.toFloat(),
+                        onValueChange = { hour12 ->
+                            // 12시간제 → 24시간제 변환 후 저장
+                            val isAm = uiState.syncStartHour < 12
+                            val hour24 = when {
+                                isAm && hour12.toInt() == 12 -> 0
+                                isAm  -> hour12.toInt()
+                                !isAm && hour12.toInt() == 12 -> 12
+                                else  -> hour12.toInt() + 12
+                            }
+                            viewModel.setSyncStartHour(hour24)
+                        },
+                        valueRange = 1f..12f,
+                        steps      = 10,
+                        modifier   = Modifier.padding(start = 32.dp),
+                        colors     = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue, inactiveTrackColor = CardBorder)
                     )
-                    // 분 선택 (0분 / 30분)
+                    Spacer(Modifier.height(8.dp))
+                    // 분(00/30) + AM/PM 버튼
                     Row(
                         modifier = Modifier.padding(start = 32.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 00분 / 30분
                         listOf(0, 30).forEach { min ->
                             val isSelected = uiState.syncStartMinute == min
                             Box(
@@ -114,11 +126,40 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(if (isSelected) PrimaryBlue else CardBorder)
                                     .clickable { viewModel.setSyncStartMinute(min) }
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = if (min == 0) "00분" else "30분",
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        // AM / PM
+                        listOf("AM", "PM").forEach { ampm ->
+                            val isSelected = uiState.syncStartAmPm == ampm
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) PrimaryBlue else CardBorder)
+                                    .clickable {
+                                        // AM↔PM 전환: 현재 시간 ±12
+                                        val currentHour = uiState.syncStartHour
+                                        val newHour = when {
+                                            ampm == "AM" && currentHour >= 12 -> currentHour - 12
+                                            ampm == "PM" && currentHour < 12  -> currentHour + 12
+                                            else -> currentHour
+                                        }
+                                        viewModel.setSyncStartHour(newHour)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = ampm,
                                     color = if (isSelected) Color.White else TextSecondary,
                                     fontSize = 12.sp,
                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
@@ -360,37 +401,127 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
         }
 
-        // ── 5. 수신 기기 IP ───────────────────────────────────
+        // ── 5. 수신 기기 ───────────────────────────────────────
         item {
             SettingsSection(title = "수신 기기") {
-                var ipText by remember { mutableStateOf(uiState.pixelIpAddress) }
-                LaunchedEffect(uiState.pixelIpAddress) { ipText = uiState.pixelIpAddress }
+                // 현재 저장된 IP 표시
+                if (uiState.pixelIpAddress.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SuccessGreen.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.PhoneAndroid, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("연결된 수신 기기", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                            Text(uiState.pixelIpAddress, color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        // 연결 해제 버튼
+                        IconButton(onClick = { viewModel.setPixelIp("") }) {
+                            Icon(Icons.Default.Close, null, tint = ErrorRed.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    SectionDivider()
+                }
 
+                // 탐색 버튼
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .clickable { if (!uiState.isScanning) viewModel.scanForDevices() }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.PhoneAndroid, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(PrimaryBlue.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (uiState.isScanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = PrimaryBlue,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Search, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                        }
+                    }
                     Spacer(Modifier.width(12.dp))
-                    OutlinedTextField(
-                        value         = ipText,
-                        onValueChange = { ipText = it; viewModel.setPixelIp(it) },
-                        label         = { Text("Pixel IP 주소", fontSize = 12.sp) },
-                        placeholder   = { Text("192.168.x.x", color = TextSecondary, fontSize = 12.sp) },
-                        singleLine    = true,
-                        modifier      = Modifier.weight(1f),
-                        colors        = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor      = TextPrimary,
-                            unfocusedTextColor    = TextPrimary,
-                            focusedBorderColor    = PrimaryBlue,
-                            unfocusedBorderColor  = CardBorder,
-                            focusedLabelColor     = PrimaryBlue,
-                            unfocusedLabelColor   = TextSecondary,
-                            cursorColor           = PrimaryBlue
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            if (uiState.isScanning) "탐색 중..." else "수신 기기 탐색",
+                            color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium
                         )
+                        Text(
+                            "같은 WiFi에서 수신 앱이 실행 중인 기기 탐색",
+                            color = TextSecondary, fontSize = 11.sp
+                        )
+                    }
+                    if (!uiState.isScanning) {
+                        Icon(Icons.Default.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                // 탐색 오류 메시지
+                uiState.scanError?.let { error ->
+                    Text(
+                        text = error,
+                        color = WarningOrange,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
                     )
+                }
+
+                // 탐색된 기기 목록
+                if (uiState.discoveredDevices.isNotEmpty()) {
+                    SectionDivider()
+                    uiState.discoveredDevices.forEachIndexed { index, device ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.selectDiscoveredDevice(device.ipAddress) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(PrimaryBlue.copy(alpha = 0.10f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Wifi, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(device.deviceName, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(device.ipAddress,  color = TextSecondary, fontSize = 11.sp)
+                            }
+                            // 선택 버튼
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(PrimaryBlue)
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("선택", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        if (index < uiState.discoveredDevices.lastIndex) SectionDivider()
+                    }
                 }
             }
         }
