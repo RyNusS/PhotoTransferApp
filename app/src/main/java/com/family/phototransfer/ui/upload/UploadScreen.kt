@@ -1,9 +1,14 @@
 package com.family.phototransfer.ui.upload
 
 import android.Manifest
+import android.graphics.Bitmap
+import android.media.ThumbnailUtils
 import android.os.Build
+import android.provider.MediaStore
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -563,19 +569,73 @@ fun MediaGridItem(
     isSelected: Boolean,
     onToggle: () -> Unit
 ) {
+    val context = LocalContext.current
+
+    // 동영상 썸네일 비동기 로드 (IO 스레드에서 처리)
+    val videoBitmap: Bitmap? by if (file.isVideo) {
+        produceState<Bitmap?>(initialValue = null, key1 = file.id) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val uri = android.net.Uri.parse(file.uri)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        context.contentResolver.loadThumbnail(uri, Size(300, 300), null)
+                    } else {
+                        val path = context.contentResolver.query(
+                            uri, arrayOf(MediaStore.Video.Media.DATA), null, null, null
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst())
+                                cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA))
+                            else null
+                        }
+                        if (path != null) {
+                            @Suppress("DEPRECATION")
+                            ThumbnailUtils.createVideoThumbnail(
+                                path, MediaStore.Images.Thumbnails.MINI_KIND
+                            )
+                        } else null
+                    }
+                } catch (e: Exception) { null }
+            }
+        }
+    } else remember { mutableStateOf<Bitmap?>(null) }
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(4.dp))
             .clickable { onToggle() }
     ) {
-        // thumbnailUri 사용 (동영상은 MediaStore 썸네일, 사진은 원본)
-        AsyncImage(
-            model = android.net.Uri.parse(file.thumbnailUri),
-            contentDescription = file.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        // delegated property는 스마트캐스트 불가 → 로컬 변수로 캡처
+        val bitmap = videoBitmap
+        if (file.isVideo && bitmap != null) {
+            // 동영상: 로드된 썸네일 비트맵 표시
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = file.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (file.isVideo) {
+            // 동영상: 썸네일 로드 실패 시 아이콘 표시
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF1C2333)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.VideoFile, null,
+                    tint = Color(0xFF8B9BB4),
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        } else {
+            // 사진: AsyncImage로 바로 로드
+            AsyncImage(
+                model = android.net.Uri.parse(file.uri),
+                contentDescription = file.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
         if (file.isVideo) {
             Box(
                 modifier = Modifier.align(Alignment.BottomStart).padding(4.dp)
