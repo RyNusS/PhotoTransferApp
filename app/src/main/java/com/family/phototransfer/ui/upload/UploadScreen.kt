@@ -7,12 +7,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,8 +24,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -107,11 +112,26 @@ fun UploadScreen(viewModel: UploadViewModel = hiltViewModel()) {
             onSelectDevice    = { viewModel.selectDevice(it) }
         )
 
-        // 3) 탭 필터
-        MediaTabRow(
-            selectedTab   = uiState.selectedTab,
-            onTabSelected = { viewModel.setTab(it) }
-        )
+        // 3) 탭 필터 + 열 전환 버튼
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                MediaTabRow(
+                    selectedTab   = uiState.selectedTab,
+                    onTabSelected = { viewModel.setTab(it) }
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // 열 전환 버튼 (3열 ↔ 5열)
+            GridColumnToggle(
+                columns   = uiState.gridColumns,
+                onToggle  = { viewModel.toggleGridColumns() }
+            )
+        }
 
         // 4) 사진 그리드
         Box(modifier = Modifier.weight(1f)) {
@@ -123,7 +143,9 @@ fun UploadScreen(viewModel: UploadViewModel = hiltViewModel()) {
                 else -> MediaGrid(
                     files          = uiState.filteredFiles,
                     selectedIds    = uiState.selectedFiles,
-                    onToggleSelect = { viewModel.toggleSelection(it) }
+                    columns        = uiState.gridColumns,
+                    onToggleSelect = { viewModel.toggleSelection(it) },
+                    onDragSelect   = { viewModel.dragSelect(it) }
                 )
             }
         }
@@ -410,33 +432,127 @@ fun MediaTabRow(selectedTab: MediaTab, onTabSelected: (MediaTab) -> Unit) {
     }
 }
 
-// ── 미디어 그리드 ─────────────────────────────────────────────
+// ── 열 전환 버튼 ─────────────────────────────────────────────
 @Composable
-fun MediaGrid(files: List<MediaFileUi>, selectedIds: Set<Long>, onToggleSelect: (Long) -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+fun GridColumnToggle(columns: Int, onToggle: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardBg)
+            .border(0.5.dp, CardBorder, RoundedCornerShape(8.dp))
+            .clickable { onToggle() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
-        items(files, key = { it.id }) { file ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.GridView,
+                contentDescription = "열 전환",
+                tint = PrimaryBlue,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = if (columns == 3) "5열" else "3열",
+                color = PrimaryBlue,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+// ── 미디어 그리드 (드래그 선택 지원) ─────────────────────────
+@Composable
+fun MediaGrid(
+    files: List<MediaFileUi>,
+    selectedIds: Set<Long>,
+    columns: Int,
+    onToggleSelect: (Long) -> Unit,
+    onDragSelect: (Set<Long>) -> Unit
+) {
+    // 각 아이템의 화면상 위치를 기록 (드래그 히트 테스트용)
+    val itemPositions = remember { mutableStateMapOf<Int, Pair<Offset, Offset>>() } // index → (topLeft, bottomRight)
+
+    // 드래그 시작 시 선택 상태 스냅샷 (drag 중 토글 기준점)
+    var dragStartSelectedIds by remember { mutableStateOf<Set<Long>?>(null) }
+    var isDragging by remember { mutableStateOf(false) }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(files, columns) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        isDragging = true
+                        dragStartSelectedIds = selectedIds.toSet()
+                    },
+                    onDrag = { change, _ ->
+                        val pos = change.position
+                        val draggedIndices = itemPositions.entries
+                            .filter { (_, rect) ->
+                                pos.x >= rect.first.x && pos.x <= rect.second.x &&
+                                pos.y >= rect.first.y && pos.y <= rect.second.y
+                            }
+                            .map { it.key }
+
+                        if (draggedIndices.isNotEmpty()) {
+                            val draggedIds = draggedIndices
+                                .mapNotNull { files.getOrNull(it)?.id }
+                                .toSet()
+                            val base = dragStartSelectedIds ?: emptySet()
+                            // 드래그된 아이템들을 기준점에 추가
+                            onDragSelect(base + draggedIds)
+                        }
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        dragStartSelectedIds = null
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        dragStartSelectedIds = null
+                    }
+                )
+            },
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (columns == 5) 2.dp else 3.dp),
+        verticalArrangement = Arrangement.spacedBy(if (columns == 5) 2.dp else 3.dp)
+    ) {
+        itemsIndexed(files, key = { _, file -> file.id }) { index, file ->
             MediaGridItem(
                 file = file,
                 isSelected = file.id in selectedIds,
-                onToggle = { onToggleSelect(file.id) }
+                onToggle = { onToggleSelect(file.id) },
+                onPositioned = { topLeft, bottomRight ->
+                    itemPositions[index] = topLeft to bottomRight
+                }
             )
         }
     }
 }
 
 @Composable
-fun MediaGridItem(file: MediaFileUi, isSelected: Boolean, onToggle: () -> Unit) {
+fun MediaGridItem(
+    file: MediaFileUi,
+    isSelected: Boolean,
+    onToggle: () -> Unit,
+    onPositioned: (Offset, Offset) -> Unit = { _, _ -> }
+) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(4.dp))
             .clickable { onToggle() }
+            .onGloballyPositioned { coords ->
+                val topLeft = coords.positionInRoot()
+                val size = coords.size
+                onPositioned(
+                    topLeft,
+                    Offset(topLeft.x + size.width, topLeft.y + size.height)
+                )
+            }
     ) {
         AsyncImage(
             model = file.uri, contentDescription = file.name,

@@ -42,7 +42,7 @@ public final class TransferDao_Impl implements TransferDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT OR IGNORE INTO `transfer_records` (`id`,`fileName`,`fileHash`,`fileSize`,`sourceDevice`,`status`,`transferredAt`) VALUES (nullif(?, 0),?,?,?,?,?,?)";
+        return "INSERT OR REPLACE INTO `transfer_records` (`id`,`fileName`,`fileHash`,`fileSize`,`sourceDevice`,`status`,`direction`,`transferredAt`) VALUES (nullif(?, 0),?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -54,7 +54,8 @@ public final class TransferDao_Impl implements TransferDao {
         statement.bindLong(4, entity.getFileSize());
         statement.bindString(5, entity.getSourceDevice());
         statement.bindString(6, entity.getStatus());
-        statement.bindLong(7, entity.getTransferredAt());
+        statement.bindString(7, entity.getDirection());
+        statement.bindLong(8, entity.getTransferredAt());
       }
     };
     this.__preparedStmtOfDeleteAll = new SharedSQLiteStatement(__db) {
@@ -109,9 +110,11 @@ public final class TransferDao_Impl implements TransferDao {
   }
 
   @Override
-  public Flow<List<TransferRecord>> getAllRecords() {
-    final String _sql = "SELECT * FROM transfer_records ORDER BY transferredAt DESC";
-    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 0);
+  public Flow<List<TransferRecord>> getRecentRecords(final long since) {
+    final String _sql = "SELECT * FROM transfer_records WHERE transferredAt >= ? ORDER BY transferredAt DESC";
+    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 1);
+    int _argIndex = 1;
+    _statement.bindLong(_argIndex, since);
     return CoroutinesRoom.createFlow(__db, false, new String[] {"transfer_records"}, new Callable<List<TransferRecord>>() {
       @Override
       @NonNull
@@ -124,6 +127,7 @@ public final class TransferDao_Impl implements TransferDao {
           final int _cursorIndexOfFileSize = CursorUtil.getColumnIndexOrThrow(_cursor, "fileSize");
           final int _cursorIndexOfSourceDevice = CursorUtil.getColumnIndexOrThrow(_cursor, "sourceDevice");
           final int _cursorIndexOfStatus = CursorUtil.getColumnIndexOrThrow(_cursor, "status");
+          final int _cursorIndexOfDirection = CursorUtil.getColumnIndexOrThrow(_cursor, "direction");
           final int _cursorIndexOfTransferredAt = CursorUtil.getColumnIndexOrThrow(_cursor, "transferredAt");
           final List<TransferRecord> _result = new ArrayList<TransferRecord>(_cursor.getCount());
           while (_cursor.moveToNext()) {
@@ -140,9 +144,64 @@ public final class TransferDao_Impl implements TransferDao {
             _tmpSourceDevice = _cursor.getString(_cursorIndexOfSourceDevice);
             final String _tmpStatus;
             _tmpStatus = _cursor.getString(_cursorIndexOfStatus);
+            final String _tmpDirection;
+            _tmpDirection = _cursor.getString(_cursorIndexOfDirection);
             final long _tmpTransferredAt;
             _tmpTransferredAt = _cursor.getLong(_cursorIndexOfTransferredAt);
-            _item = new TransferRecord(_tmpId,_tmpFileName,_tmpFileHash,_tmpFileSize,_tmpSourceDevice,_tmpStatus,_tmpTransferredAt);
+            _item = new TransferRecord(_tmpId,_tmpFileName,_tmpFileHash,_tmpFileSize,_tmpSourceDevice,_tmpStatus,_tmpDirection,_tmpTransferredAt);
+            _result.add(_item);
+          }
+          return _result;
+        } finally {
+          _cursor.close();
+        }
+      }
+
+      @Override
+      protected void finalize() {
+        _statement.release();
+      }
+    });
+  }
+
+  @Override
+  public Flow<List<TransferRecord>> getAllRecords() {
+    final String _sql = "SELECT * FROM transfer_records ORDER BY transferredAt DESC";
+    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 0);
+    return CoroutinesRoom.createFlow(__db, false, new String[] {"transfer_records"}, new Callable<List<TransferRecord>>() {
+      @Override
+      @NonNull
+      public List<TransferRecord> call() throws Exception {
+        final Cursor _cursor = DBUtil.query(__db, _statement, false, null);
+        try {
+          final int _cursorIndexOfId = CursorUtil.getColumnIndexOrThrow(_cursor, "id");
+          final int _cursorIndexOfFileName = CursorUtil.getColumnIndexOrThrow(_cursor, "fileName");
+          final int _cursorIndexOfFileHash = CursorUtil.getColumnIndexOrThrow(_cursor, "fileHash");
+          final int _cursorIndexOfFileSize = CursorUtil.getColumnIndexOrThrow(_cursor, "fileSize");
+          final int _cursorIndexOfSourceDevice = CursorUtil.getColumnIndexOrThrow(_cursor, "sourceDevice");
+          final int _cursorIndexOfStatus = CursorUtil.getColumnIndexOrThrow(_cursor, "status");
+          final int _cursorIndexOfDirection = CursorUtil.getColumnIndexOrThrow(_cursor, "direction");
+          final int _cursorIndexOfTransferredAt = CursorUtil.getColumnIndexOrThrow(_cursor, "transferredAt");
+          final List<TransferRecord> _result = new ArrayList<TransferRecord>(_cursor.getCount());
+          while (_cursor.moveToNext()) {
+            final TransferRecord _item;
+            final long _tmpId;
+            _tmpId = _cursor.getLong(_cursorIndexOfId);
+            final String _tmpFileName;
+            _tmpFileName = _cursor.getString(_cursorIndexOfFileName);
+            final String _tmpFileHash;
+            _tmpFileHash = _cursor.getString(_cursorIndexOfFileHash);
+            final long _tmpFileSize;
+            _tmpFileSize = _cursor.getLong(_cursorIndexOfFileSize);
+            final String _tmpSourceDevice;
+            _tmpSourceDevice = _cursor.getString(_cursorIndexOfSourceDevice);
+            final String _tmpStatus;
+            _tmpStatus = _cursor.getString(_cursorIndexOfStatus);
+            final String _tmpDirection;
+            _tmpDirection = _cursor.getString(_cursorIndexOfDirection);
+            final long _tmpTransferredAt;
+            _tmpTransferredAt = _cursor.getLong(_cursorIndexOfTransferredAt);
+            _item = new TransferRecord(_tmpId,_tmpFileName,_tmpFileHash,_tmpFileSize,_tmpSourceDevice,_tmpStatus,_tmpDirection,_tmpTransferredAt);
             _result.add(_item);
           }
           return _result;
@@ -160,7 +219,7 @@ public final class TransferDao_Impl implements TransferDao {
 
   @Override
   public Object countByHash(final String hash, final Continuation<? super Integer> $completion) {
-    final String _sql = "SELECT COUNT(*) FROM transfer_records WHERE fileHash = ? AND status = 'SUCCESS'";
+    final String _sql = "SELECT COUNT(*) FROM transfer_records WHERE fileHash = ? AND fileHash != ''";
     final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 1);
     int _argIndex = 1;
     _statement.bindString(_argIndex, hash);

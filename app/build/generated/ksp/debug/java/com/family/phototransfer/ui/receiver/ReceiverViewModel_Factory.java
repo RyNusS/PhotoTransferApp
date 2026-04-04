@@ -1,6 +1,8 @@
 package com.family.phototransfer.ui.receiver;
 
 import android.content.Context;
+import com.family.phototransfer.data.repository.TransferRepository;
+import com.family.phototransfer.network.ReceiverStateHolder;
 import dagger.internal.DaggerGenerated;
 import dagger.internal.Factory;
 import dagger.internal.QualifierMetadata;
@@ -25,20 +27,31 @@ import javax.inject.Provider;
 public final class ReceiverViewModel_Factory implements Factory<ReceiverViewModel> {
   private final Provider<Context> contextProvider;
 
-  public ReceiverViewModel_Factory(Provider<Context> contextProvider) {
+  private final Provider<TransferRepository> repositoryProvider;
+
+  private final Provider<ReceiverStateHolder> receiverStateHolderProvider;
+
+  public ReceiverViewModel_Factory(Provider<Context> contextProvider,
+      Provider<TransferRepository> repositoryProvider,
+      Provider<ReceiverStateHolder> receiverStateHolderProvider) {
     this.contextProvider = contextProvider;
+    this.repositoryProvider = repositoryProvider;
+    this.receiverStateHolderProvider = receiverStateHolderProvider;
   }
 
   @Override
   public ReceiverViewModel get() {
-    return newInstance(contextProvider.get());
+    return newInstance(contextProvider.get(), repositoryProvider.get(), receiverStateHolderProvider.get());
   }
 
-  public static ReceiverViewModel_Factory create(Provider<Context> contextProvider) {
-    return new ReceiverViewModel_Factory(contextProvider);
+  public static ReceiverViewModel_Factory create(Provider<Context> contextProvider,
+      Provider<TransferRepository> repositoryProvider,
+      Provider<ReceiverStateHolder> receiverStateHolderProvider) {
+    return new ReceiverViewModel_Factory(contextProvider, repositoryProvider, receiverStateHolderProvider);
   }
 
-  public static ReceiverViewModel newInstance(Context context) {
-    return new ReceiverViewModel(context);
+  public static ReceiverViewModel newInstance(Context context, TransferRepository repository,
+      ReceiverStateHolder receiverStateHolder) {
+    return new ReceiverViewModel(context, repository, receiverStateHolder);
   }
 }

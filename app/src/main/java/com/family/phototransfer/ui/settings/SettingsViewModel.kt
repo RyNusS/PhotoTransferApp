@@ -21,15 +21,30 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "se
 
 private object Keys {
     val AUTO_SYNC_ENABLED    = booleanPreferencesKey("auto_sync_enabled")
-    val SYNC_INTERVAL_HOURS  = intPreferencesKey("sync_interval_hours")     // 1~24
+    val SYNC_INTERVAL_HOURS  = intPreferencesKey("sync_interval_hours")
     val SYNC_START_HOUR      = intPreferencesKey("sync_start_hour")         // 0~23
-    val SYNC_FROM_DATE       = stringPreferencesKey("sync_from_date")       // "YYYY-MM-DD" or "ALL"
+    val SYNC_START_MINUTE    = intPreferencesKey("sync_start_minute")       // ✅ 0 or 30
+    val SYNC_FROM_DATE       = stringPreferencesKey("sync_from_date")       // "YYYY-MM-DD", "ALL", "RECENT_3", "RECENT_7"
     val PIXEL_IP             = stringPreferencesKey("pixel_ip")
     val SKIP_DUPLICATES      = booleanPreferencesKey("skip_duplicates")
-    // ✅ 알림을 송신/수신 각각 분리
     val NOTIFY_ON_SEND       = booleanPreferencesKey("notify_on_send")
     val NOTIFY_ON_RECEIVE    = booleanPreferencesKey("notify_on_receive")
-    val SYNC_FOLDERS         = stringPreferencesKey("sync_folders")         // pipe-delimited
+    val SYNC_FOLDERS         = stringPreferencesKey("sync_folders")
+}
+
+// ✅ 동기화 주기 옵션 (시간 단위로 저장)
+enum class SyncIntervalOption(val hours: Int, val label: String) {
+    H6  (6,    "6시간"),
+    H12 (12,   "12시간"),
+    H24 (24,   "24시간"),
+    D2  (48,   "2일"),
+    D3  (72,   "3일"),
+    D7  (168,  "7일");
+
+    companion object {
+        fun fromHours(hours: Int): SyncIntervalOption =
+            values().firstOrNull { it.hours == hours } ?: H24
+    }
 }
 
 data class SyncFolder(
@@ -40,25 +55,40 @@ data class SyncFolder(
 )
 
 data class SettingsUiState(
-    val autoSyncEnabled:   Boolean         = false,
-    val syncIntervalHours: Int             = 6,         // 1~24
-    val syncStartHour:     Int             = 8,         // 0~23
-    val syncFromDate:      String          = "ALL",     // "YYYY-MM-DD" or "ALL"
-    val pixelIpAddress:    String          = "",
-    val skipDuplicates:    Boolean         = true,
-    // ✅ 알림 설정 분리
-    val notifyOnSend:      Boolean         = true,
-    val notifyOnReceive:   Boolean         = true,
-    val syncFolders:       List<SyncFolder> = emptyList(),
-    val isSyncRunning:     Boolean         = false,
-    val showDatePicker:    Boolean         = false,
-    val showFolderPicker:  Boolean         = false,
-    val availableFolders:  List<SyncFolder> = emptyList()
+    val autoSyncEnabled:   Boolean              = false,
+    val syncInterval:      SyncIntervalOption   = SyncIntervalOption.H24,  // ✅ 옵션 enum
+    val syncStartHour:     Int                  = 8,    // 0~23
+    val syncStartMinute:   Int                  = 0,    // ✅ 0 or 30
+    val syncFromDate:      String               = "ALL",
+    val pixelIpAddress:    String               = "",
+    val skipDuplicates:    Boolean              = true,
+    val notifyOnSend:      Boolean              = true,
+    val notifyOnReceive:   Boolean              = true,
+    val syncFolders:       List<SyncFolder>     = emptyList(),
+    val isSyncRunning:     Boolean              = false,
+    val showDatePicker:    Boolean              = false,
+    val showFolderPicker:  Boolean              = false,
+    val availableFolders:  List<SyncFolder>     = emptyList()
 ) {
-    val syncIntervalText: String get() =
-        if (syncIntervalHours == 1) "1시간마다" else "${syncIntervalHours}시간마다"
-    val syncStartHourText: String get() = "%02d:00".format(syncStartHour)
-    val syncFromDateText:  String get() = if (syncFromDate == "ALL") "전체" else syncFromDate
+    val syncIntervalText: String get() = syncInterval.label
+    // ✅ 30분 단위 표시
+    val syncStartTimeText: String get() = "%02d:%02d".format(syncStartHour, syncStartMinute)
+    val syncFromDateText: String get() = when (syncFromDate) {
+        "ALL"      -> "전체"
+        "RECENT_3" -> "최근 3일"
+        "RECENT_7" -> "최근 7일"
+        else       -> syncFromDate
+    }
+    // ✅ 실제 필터용 날짜 계산 (오늘 기준)
+    val syncFromDateResolved: String get() {
+        val cal = java.util.Calendar.getInstance()
+        return when (syncFromDate) {
+            "ALL"      -> "ALL"
+            "RECENT_3" -> { cal.add(java.util.Calendar.DAY_OF_YEAR, -2); "%04d-%02d-%02d".format(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH)+1, cal.get(java.util.Calendar.DAY_OF_MONTH)) }
+            "RECENT_7" -> { cal.add(java.util.Calendar.DAY_OF_YEAR, -6); "%04d-%02d-%02d".format(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH)+1, cal.get(java.util.Calendar.DAY_OF_MONTH)) }
+            else       -> syncFromDate
+        }
+    }
 }
 
 @HiltViewModel
@@ -74,8 +104,9 @@ class SettingsViewModel @Inject constructor(
             context.dataStore.data.catch { emit(emptyPreferences()) }.collect { prefs ->
                 _uiState.value = SettingsUiState(
                     autoSyncEnabled   = prefs[Keys.AUTO_SYNC_ENABLED]   ?: false,
-                    syncIntervalHours = prefs[Keys.SYNC_INTERVAL_HOURS] ?: 6,
+                    syncInterval      = SyncIntervalOption.fromHours(prefs[Keys.SYNC_INTERVAL_HOURS] ?: 24),
                     syncStartHour     = prefs[Keys.SYNC_START_HOUR]     ?: 8,
+                    syncStartMinute   = prefs[Keys.SYNC_START_MINUTE]   ?: 0,
                     syncFromDate      = prefs[Keys.SYNC_FROM_DATE]      ?: "ALL",
                     pixelIpAddress    = prefs[Keys.PIXEL_IP]            ?: "",
                     skipDuplicates    = prefs[Keys.SKIP_DUPLICATES]     ?: true,
@@ -96,16 +127,26 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setSyncIntervalHours(hours: Int) {
+    // ✅ 7번 - 주기를 SyncIntervalOption enum으로 설정
+    fun setSyncInterval(option: SyncIntervalOption) {
         viewModelScope.launch {
-            save(Keys.SYNC_INTERVAL_HOURS, hours.coerceIn(1, 24))
+            save(Keys.SYNC_INTERVAL_HOURS, option.hours)
             if (_uiState.value.autoSyncEnabled) scheduleAutoSync()
         }
     }
 
+    // ✅ 6번 - 시작 시각: 시(hour) 설정
     fun setSyncStartHour(hour: Int) {
         viewModelScope.launch {
             save(Keys.SYNC_START_HOUR, hour.coerceIn(0, 23))
+            if (_uiState.value.autoSyncEnabled) scheduleAutoSync()
+        }
+    }
+
+    // ✅ 6번 - 시작 시각: 분(minute) 설정 (0 or 30)
+    fun setSyncStartMinute(minute: Int) {
+        viewModelScope.launch {
+            save(Keys.SYNC_START_MINUTE, if (minute < 30) 0 else 30)
             if (_uiState.value.autoSyncEnabled) scheduleAutoSync()
         }
     }
@@ -122,7 +163,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { save(Keys.SKIP_DUPLICATES, skip) }
     }
 
-    // ✅ 알림 설정 - 송신/수신 분리
     fun setNotifyOnSend(enabled: Boolean) {
         viewModelScope.launch { save(Keys.NOTIFY_ON_SEND, enabled) }
     }
@@ -181,7 +221,7 @@ class SettingsViewModel @Inject constructor(
         val state = _uiState.value
         AutoSyncScheduler.schedule(
             context       = context,
-            intervalHours = state.syncIntervalHours,
+            intervalHours = state.syncInterval.hours,
             receiverIp    = state.pixelIpAddress
         )
     }

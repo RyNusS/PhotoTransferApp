@@ -17,9 +17,12 @@ import com.family.phototransfer.data.db.TransferDao;
 import com.family.phototransfer.data.repository.TransferRepository;
 import com.family.phototransfer.di.AppModule_ProvideDatabaseFactory;
 import com.family.phototransfer.di.AppModule_ProvideTransferDaoFactory;
+import com.family.phototransfer.network.ReceiverStateHolder;
 import com.family.phototransfer.network.TransferManager;
 import com.family.phototransfer.scheduler.AutoSyncWorker;
 import com.family.phototransfer.scheduler.AutoSyncWorker_AssistedFactory;
+import com.family.phototransfer.service.TransferForegroundService;
+import com.family.phototransfer.service.TransferForegroundService_MembersInjector;
 import com.family.phototransfer.ui.dashboard.SenderDashboardViewModel;
 import com.family.phototransfer.ui.dashboard.SenderDashboardViewModel_HiltModules;
 import com.family.phototransfer.ui.history.HistoryViewModel;
@@ -382,6 +385,7 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
     @Override
     public void injectMainActivity(MainActivity mainActivity) {
+      injectMainActivity2(mainActivity);
     }
 
     @Override
@@ -409,32 +413,37 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
       return new ViewCBuilder(singletonCImpl, activityRetainedCImpl, activityCImpl);
     }
 
+    private MainActivity injectMainActivity2(MainActivity instance) {
+      MainActivity_MembersInjector.injectReceiverStateHolder(instance, singletonCImpl.receiverStateHolderProvider.get());
+      return instance;
+    }
+
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
-
       static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
+
+      static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
+
+      static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
 
       static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
 
       static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
 
-      static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
+      @KeepFieldType
+      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
+
+      @KeepFieldType
+      SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
 
       @KeepFieldType
       SettingsViewModel com_family_phototransfer_ui_settings_SettingsViewModel2;
-
-      @KeepFieldType
-      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
 
       @KeepFieldType
       UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
 
       @KeepFieldType
       HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
-
-      @KeepFieldType
-      SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
     }
   }
 
@@ -487,30 +496,30 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
-
-      static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
-
       static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
-
-      static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
 
       static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
 
-      @KeepFieldType
-      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
+      static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
 
-      @KeepFieldType
-      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
+      static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
+
+      static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
 
       @KeepFieldType
       SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
 
       @KeepFieldType
+      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
+
+      @KeepFieldType
       SettingsViewModel com_family_phototransfer_ui_settings_SettingsViewModel2;
 
       @KeepFieldType
-      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
+      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
+
+      @KeepFieldType
+      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {
@@ -535,10 +544,10 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
       public T get() {
         switch (id) {
           case 0: // com.family.phototransfer.ui.history.HistoryViewModel 
-          return (T) new HistoryViewModel(singletonCImpl.transferDao());
+          return (T) new HistoryViewModel(singletonCImpl.transferRepositoryProvider.get(), singletonCImpl.transferDao());
 
           case 1: // com.family.phototransfer.ui.receiver.ReceiverViewModel 
-          return (T) new ReceiverViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+          return (T) new ReceiverViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.transferRepositoryProvider.get(), singletonCImpl.receiverStateHolderProvider.get());
 
           case 2: // com.family.phototransfer.ui.dashboard.SenderDashboardViewModel 
           return (T) new SenderDashboardViewModel();
@@ -547,7 +556,7 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
           return (T) new SettingsViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           case 4: // com.family.phototransfer.ui.upload.UploadViewModel 
-          return (T) new UploadViewModel(singletonCImpl.transferManagerProvider.get());
+          return (T) new UploadViewModel(singletonCImpl.transferManagerProvider.get(), singletonCImpl.receiverStateHolderProvider.get());
 
           default: throw new AssertionError(id);
         }
@@ -622,6 +631,18 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
 
     }
+
+    @Override
+    public void injectTransferForegroundService(
+        TransferForegroundService transferForegroundService) {
+      injectTransferForegroundService2(transferForegroundService);
+    }
+
+    private TransferForegroundService injectTransferForegroundService2(
+        TransferForegroundService instance) {
+      TransferForegroundService_MembersInjector.injectReceiverStateHolder(instance, singletonCImpl.receiverStateHolderProvider.get());
+      return instance;
+    }
   }
 
   private static final class SingletonCImpl extends PhotoTransferApp_HiltComponents.SingletonC {
@@ -636,6 +657,8 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
     private Provider<TransferManager> transferManagerProvider;
 
     private Provider<AutoSyncWorker_AssistedFactory> autoSyncWorker_AssistedFactoryProvider;
+
+    private Provider<ReceiverStateHolder> receiverStateHolderProvider;
 
     private SingletonCImpl(ApplicationContextModule applicationContextModuleParam) {
       this.applicationContextModule = applicationContextModuleParam;
@@ -662,6 +685,7 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
       this.transferRepositoryProvider = DoubleCheck.provider(new SwitchingProvider<TransferRepository>(singletonCImpl, 2));
       this.transferManagerProvider = DoubleCheck.provider(new SwitchingProvider<TransferManager>(singletonCImpl, 1));
       this.autoSyncWorker_AssistedFactoryProvider = SingleCheck.provider(new SwitchingProvider<AutoSyncWorker_AssistedFactory>(singletonCImpl, 0));
+      this.receiverStateHolderProvider = DoubleCheck.provider(new SwitchingProvider<ReceiverStateHolder>(singletonCImpl, 4));
     }
 
     @Override
@@ -719,6 +743,9 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
           case 3: // com.family.phototransfer.data.db.AppDatabase 
           return (T) AppModule_ProvideDatabaseFactory.provideDatabase(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
+
+          case 4: // com.family.phototransfer.network.ReceiverStateHolder 
+          return (T) new ReceiverStateHolder();
 
           default: throw new AssertionError(id);
         }

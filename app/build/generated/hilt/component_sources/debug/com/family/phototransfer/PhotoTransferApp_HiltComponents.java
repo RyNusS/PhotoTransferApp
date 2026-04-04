@@ -3,6 +3,7 @@ package com.family.phototransfer;
 import androidx.hilt.work.HiltWrapper_WorkerFactoryModule;
 import com.family.phototransfer.di.AppModule;
 import com.family.phototransfer.scheduler.AutoSyncWorker_HiltModule;
+import com.family.phototransfer.service.TransferForegroundService_GeneratedInjector;
 import com.family.phototransfer.ui.dashboard.SenderDashboardViewModel_HiltModules;
 import com.family.phototransfer.ui.history.HistoryViewModel_HiltModules;
 import com.family.phototransfer.ui.receiver.ReceiverViewModel_HiltModules;
@@ -152,7 +153,8 @@ public final class PhotoTransferApp_HiltComponents {
 
   @Subcomponent
   @ServiceScoped
-  public abstract static class ServiceC implements ServiceComponent,
+  public abstract static class ServiceC implements TransferForegroundService_GeneratedInjector,
+      ServiceComponent,
       GeneratedComponent {
     @Subcomponent.Builder
     abstract interface Builder extends ServiceComponentBuilder {

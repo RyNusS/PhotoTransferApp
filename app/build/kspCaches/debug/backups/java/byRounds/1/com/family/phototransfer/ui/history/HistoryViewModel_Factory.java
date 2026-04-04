@@ -1,6 +1,7 @@
 package com.family.phototransfer.ui.history;
 
 import com.family.phototransfer.data.db.TransferDao;
+import com.family.phototransfer.data.repository.TransferRepository;
 import dagger.internal.DaggerGenerated;
 import dagger.internal.Factory;
 import dagger.internal.QualifierMetadata;
@@ -23,22 +24,28 @@ import javax.inject.Provider;
     "cast"
 })
 public final class HistoryViewModel_Factory implements Factory<HistoryViewModel> {
+  private final Provider<TransferRepository> repositoryProvider;
+
   private final Provider<TransferDao> transferDaoProvider;
 
-  public HistoryViewModel_Factory(Provider<TransferDao> transferDaoProvider) {
+  public HistoryViewModel_Factory(Provider<TransferRepository> repositoryProvider,
+      Provider<TransferDao> transferDaoProvider) {
+    this.repositoryProvider = repositoryProvider;
     this.transferDaoProvider = transferDaoProvider;
   }
 
   @Override
   public HistoryViewModel get() {
-    return newInstance(transferDaoProvider.get());
+    return newInstance(repositoryProvider.get(), transferDaoProvider.get());
   }
 
-  public static HistoryViewModel_Factory create(Provider<TransferDao> transferDaoProvider) {
-    return new HistoryViewModel_Factory(transferDaoProvider);
+  public static HistoryViewModel_Factory create(Provider<TransferRepository> repositoryProvider,
+      Provider<TransferDao> transferDaoProvider) {
+    return new HistoryViewModel_Factory(repositoryProvider, transferDaoProvider);
   }
 
-  public static HistoryViewModel newInstance(TransferDao transferDao) {
-    return new HistoryViewModel(transferDao);
+  public static HistoryViewModel newInstance(TransferRepository repository,
+      TransferDao transferDao) {
+    return new HistoryViewModel(repository, transferDao);
   }
 }

@@ -44,6 +44,18 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <!-- ✅ 8번 - 부팅 시 자동 실행 BroadcastReceiver -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager가 자체 초기화하지 않도록 비활성화 (HiltWorkerFactory 사용) -->
         <provider
             android:name="androidx.startup.InitializationProvider"

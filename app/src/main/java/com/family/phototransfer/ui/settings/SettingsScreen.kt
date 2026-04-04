@@ -83,37 +83,106 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 )
                 SectionDivider()
 
-                // 동기화 시작 시각 (0~23시)
-                SettingsSliderRow(
-                    icon     = Icons.Default.Schedule,
-                    title    = "동기화 시작 시각",
-                    valueText = uiState.syncStartHourText,
-                    value    = uiState.syncStartHour.toFloat(),
-                    valueRange = 0f..23f,
-                    steps    = 22,
-                    onValueChange = { viewModel.setSyncStartHour(it.toInt()) }
-                )
+                // ✅ 6번 - 동기화 시작 시각 (시간 0~23, 분 0/30)
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Schedule, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("동기화 시작 시각", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(uiState.syncStartTimeText, color = PrimaryBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 시간 슬라이더 (0~23)
+                    Text("시각: ${uiState.syncStartHour}시", color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(start = 32.dp))
+                    Slider(
+                        value         = uiState.syncStartHour.toFloat(),
+                        onValueChange = { viewModel.setSyncStartHour(it.toInt()) },
+                        valueRange    = 0f..23f,
+                        steps         = 22,
+                        modifier      = Modifier.padding(start = 32.dp),
+                        colors        = SliderDefaults.colors(thumbColor = PrimaryBlue, activeTrackColor = PrimaryBlue, inactiveTrackColor = CardBorder)
+                    )
+                    // 분 선택 (0분 / 30분)
+                    Row(
+                        modifier = Modifier.padding(start = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(0, 30).forEach { min ->
+                            val isSelected = uiState.syncStartMinute == min
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) PrimaryBlue else CardBorder)
+                                    .clickable { viewModel.setSyncStartMinute(min) }
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (min == 0) "00분" else "30분",
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
                 SectionDivider()
 
-                // 동기화 주기 (1~24시간)
-                SettingsSliderRow(
-                    icon      = Icons.Default.Repeat,
-                    title     = "동기화 주기",
-                    valueText = uiState.syncIntervalText,
-                    value     = uiState.syncIntervalHours.toFloat(),
-                    valueRange = 1f..24f,
-                    steps    = 22,
-                    onValueChange = { viewModel.setSyncIntervalHours(it.toInt()) }
-                )
+                // ✅ 7번 - 동기화 주기 (6개 옵션 버튼)
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Repeat, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("동기화 주기", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(uiState.syncIntervalText, color = PrimaryBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    // 6개 옵션을 2행 3열로 표시
+                    val options = SyncIntervalOption.values().toList()
+                    Column(
+                        modifier = Modifier.padding(start = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        options.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                row.forEach { option ->
+                                    val isSelected = uiState.syncInterval == option
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) PrimaryBlue else CardBorder)
+                                            .border(
+                                                width = if (isSelected) 0.dp else 0.5.dp,
+                                                color = CardBorder,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable { viewModel.setSyncInterval(option) }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = option.label,
+                                            color = if (isSelected) Color.White else TextSecondary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // 설명 텍스트
                 if (uiState.autoSyncEnabled) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "⏰ ${uiState.syncStartHourText}부터 매 ${uiState.syncIntervalText} 동기화",
+                        text = "⏰ ${uiState.syncStartTimeText}부터 ${uiState.syncIntervalText}마다 동기화",
                         color = PrimaryBlue.copy(alpha = 0.8f),
                         fontSize = 11.sp,
-                        modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+                        modifier = Modifier.padding(start = 48.dp, bottom = 8.dp)
                     )
                 }
             }
@@ -123,16 +192,68 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         item {
             SettingsSection(title = "동기화 범위") {
 
-                // 동기화 범위 날짜 선택
-                SettingsClickableRow(
-                    icon     = Icons.Default.CalendarToday,
-                    title    = "시작 날짜",
-                    subtitle = if (uiState.syncFromDate == "ALL") "전체 (모든 파일)" else "${uiState.syncFromDate} 이후",
-                    onClick  = { viewModel.showDatePicker() }
-                )
+                // ✅ 5번 - 동기화 범위 날짜 선택 (빠른 옵션 + 직접 선택)
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CalendarToday, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("동기화 시작 날짜", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(uiState.syncFromDateText, color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    // 빠른 선택 버튼 (전체 / 최근3일 / 최근7일 / 직접선택)
+                    Row(
+                        modifier = Modifier.padding(start = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        data class DateOption(val key: String, val label: String)
+                        listOf(
+                            DateOption("ALL",      "전체"),
+                            DateOption("RECENT_3", "최근 3일"),
+                            DateOption("RECENT_7", "최근 7일"),
+                            DateOption("CUSTOM",   "직접 선택")
+                        ).forEach { opt ->
+                            val isSelected = when (opt.key) {
+                                "CUSTOM" -> uiState.syncFromDate != "ALL" && uiState.syncFromDate != "RECENT_3" && uiState.syncFromDate != "RECENT_7"
+                                else     -> uiState.syncFromDate == opt.key
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) PrimaryBlue else CardBorder)
+                                    .clickable {
+                                        if (opt.key == "CUSTOM") viewModel.showDatePicker()
+                                        else viewModel.setSyncFromDate(opt.key)
+                                    }
+                                    .padding(vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = opt.label,
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                    // 직접 선택된 날짜 표시
+                    val isCustomDate = uiState.syncFromDate != "ALL" && uiState.syncFromDate != "RECENT_3" && uiState.syncFromDate != "RECENT_7"
+                    if (isCustomDate) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "📅 ${uiState.syncFromDate} 이후 파일만 동기화",
+                            color = PrimaryBlue.copy(alpha = 0.8f),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(start = 32.dp)
+                        )
+                    }
+                }
                 SectionDivider()
 
-                // WiFi 전용 안내 (토글 없음 - 4번 요구사항)
+                // WiFi 전용 안내
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

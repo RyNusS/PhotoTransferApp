@@ -32,9 +32,17 @@ private val TextSecondary = Color(0xFF8B9BB4)
 
 @Composable
 fun ReceiverScreen(
-    viewModel: ReceiverViewModel = hiltViewModel()
+    viewModel: ReceiverViewModel = hiltViewModel(),
+    autoStart: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // autoStart=true이면 화면 진입 즉시 수신 시작
+    LaunchedEffect(autoStart) {
+        if (autoStart && !uiState.isListening) {
+            viewModel.startListening()
+        }
+    }
 
     LazyColumn(
         modifier = Modifier

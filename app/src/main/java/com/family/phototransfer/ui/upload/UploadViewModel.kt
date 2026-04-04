@@ -40,9 +40,10 @@ data class UploadUiState(
     val selectedFiles: Set<Long> = emptySet(),
     val selectedTab: MediaTab = MediaTab.ALL,
     val cloudSyncActive: Boolean = false,
+    val gridColumns: Int = 3,                             // ✅ 3열/5열 전환
 
     val isScanning: Boolean = false,
-    val scanEnabled: Boolean = true,          // ✅ 수신기기 수신중일 때 탐색 비활성화
+    val scanEnabled: Boolean = true,
     val discoveredDevices: List<DiscoveredDevice> = emptyList(),
     val selectedDevice: DiscoveredDevice? = null,
 
@@ -154,6 +155,17 @@ class UploadViewModel @Inject constructor(
         val current = _uiState.value.selectedFiles.toMutableSet()
         if (id in current) current.remove(id) else current.add(id)
         _uiState.value = _uiState.value.copy(selectedFiles = current)
+    }
+
+    // ✅ 드래그 선택: 드래그된 ID 집합으로 selectedFiles 덮어쓰기
+    fun dragSelect(ids: Set<Long>) {
+        _uiState.value = _uiState.value.copy(selectedFiles = ids)
+    }
+
+    // ✅ 3열 ↔ 5열 전환
+    fun toggleGridColumns() {
+        val next = if (_uiState.value.gridColumns == 3) 5 else 3
+        _uiState.value = _uiState.value.copy(gridColumns = next)
     }
 
     fun selectAll() {

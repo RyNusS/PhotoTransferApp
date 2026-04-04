@@ -41,24 +41,29 @@ class TransferManager @Inject constructor(
             emit(TransferEvent.Started(fileName, index + 1, files.size))
 
             try {
-                // 1) 파일을 1회만 읽기
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                // 1) 파일 크기 조회 (스트림을 열기 전에 미리)
+                val fileSize = withContext(Dispatchers.IO) {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                        it.statSize
+                    } ?: 0L
                 }
 
-                if (bytes == null) {
+                Log.d(TAG, "파일 크기 확인: $fileName ($fileSize bytes)")
+
+                // 2) 해시 계산 - 1차 스트림 (중복 확인용)
+                val fileHash = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        HashUtil.sha256(stream)
+                    }
+                }
+
+                if (fileHash == null) {
                     val msg = "파일을 열 수 없습니다: $fileName"
                     Log.e(TAG, msg)
                     emit(TransferEvent.Failed(fileName, msg))
                     repository.recordFailed(fileName, 0L, sourceDeviceName)
                     return@forEachIndexed
                 }
-
-                val fileSize = bytes.size.toLong()
-                Log.d(TAG, "파일 읽기 완료: $fileName (${fileSize} bytes)")
-
-                // 2) 해시 계산 (읽은 바이트로 바로 계산)
-                val fileHash = HashUtil.sha256(bytes)
 
                 // 3) 송신측 DB 중복 확인
                 if (repository.isDuplicate(fileHash)) {
@@ -68,23 +73,29 @@ class TransferManager @Inject constructor(
                     return@forEachIndexed
                 }
 
-                // 4) 소켓 전송 (읽어둔 바이트 그대로 전달 - 파일 재읽기 없음)
-                val result = client.sendBytes(
-                    fileBytes  = bytes,
-                    fileHash   = fileHash,
-                    fileName   = fileName,
-                    receiverIp = receiverIp,
-                    onProgress = { progress ->
-                        // 진행률 이벤트 (필요시 사용)
-                    }
-                )
+                // 4) 소켓 전송 - 2차 스트림 (스트리밍 전송, OOM 없음)
+                val result = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        client.sendStream(
+                            inputStream = stream,
+                            fileSize    = fileSize,
+                            fileHash    = fileHash,
+                            fileName    = fileName,
+                            receiverIp  = receiverIp,
+                            onProgress  = { progress ->
+                                // 진행률은 TransferEvent.Progress로 emit 불가(flow 외부)
+                                // UploadViewModel에서 uploadProgress 별도 관리
+                            }
+                        )
+                    } ?: TransferResult.Failed(fileName, "파일 스트림을 열 수 없습니다")
+                }
 
                 // 5) 결과 처리
                 when (result) {
                     is TransferResult.Success -> {
                         Log.d(TAG, "전송 성공: $fileName")
-                        emit(TransferEvent.Completed(fileName, fileSize))
-                        repository.recordSuccess(fileName, fileHash, fileSize, sourceDeviceName)
+                        emit(TransferEvent.Completed(fileName, result.fileSize))
+                        repository.recordSuccess(fileName, fileHash, result.fileSize, sourceDeviceName)
                     }
                     is TransferResult.Skipped -> {
                         Log.d(TAG, "수신측 중복: $fileName")
@@ -98,12 +109,6 @@ class TransferManager @Inject constructor(
                     }
                 }
 
-            } catch (e: OutOfMemoryError) {
-                // 대용량 파일 OOM 대응
-                val msg = "파일이 너무 큽니다 (메모리 부족): $fileName"
-                Log.e(TAG, msg)
-                emit(TransferEvent.Failed(fileName, msg))
-                repository.recordFailed(fileName, 0L, sourceDeviceName)
             } catch (e: Exception) {
                 val msg = "${e.javaClass.simpleName}: ${e.message}"
                 Log.e(TAG, "예외 발생 ($fileName): $msg")
