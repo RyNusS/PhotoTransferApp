@@ -48,13 +48,14 @@ class BootReceiver : BroadcastReceiver() {
                 val autoSyncEnabled = prefs[booleanPreferencesKey("auto_sync_enabled")] ?: false
                 Log.d(TAG, "자동 동기화 설정: $autoSyncEnabled")
 
-                if (autoSyncEnabled) {
+                val autoStartOnBoot = prefs[booleanPreferencesKey("auto_start_on_boot")] ?: false
+                Log.d(TAG, "부팅 시 수신 자동 시작 설정: $autoStartOnBoot")
+
+                if (autoStartOnBoot) {
                     startReceiverService(context)
+                    Log.d(TAG, "수신 서비스 자동 시작")
                 } else {
-                    // 자동 동기화가 꺼져 있어도 수신 대기 서비스는 시작
-                    // (픽셀 폰은 항상 수신 대기 상태를 유지해야 함)
-                    startReceiverService(context)
-                    Log.d(TAG, "수신 대기 서비스 시작 (자동 동기화 비활성 상태)")
+                    Log.d(TAG, "자동 시작 비활성: 서비스 시작 안 함")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "부팅 처리 오류: ${e.message}")

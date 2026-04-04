@@ -58,14 +58,18 @@ class WifiDeviceScanner(private val context: Context) {
     }
 
     /**
-     * 특정 IP에 수신 앱(PhotoTransfer)이 실행 중인지 확인
-     * TRANSFER_PORT에 소켓 연결 시도로 판단
+     * 특정 IP에 PhotoTransfer 수신 앱이 실행 중인지 확인
+     * DISCOVERY_PORT(9877)에 연결 후 "PHOTO_TRANSFER_RECEIVER" 응답 확인
+     * → TRANSFER_PORT(9876)에는 전혀 영향 없음
      */
     private fun isPhotoTransferReceiver(ip: String): Boolean {
         return try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(ip, TRANSFER_PORT), SOCKET_TIMEOUT_MS)
-                true
+                socket.connect(InetSocketAddress(ip, DISCOVERY_PORT), SOCKET_TIMEOUT_MS)
+                socket.soTimeout = SOCKET_TIMEOUT_MS
+                val input = java.io.DataInputStream(socket.getInputStream())
+                val response = input.readUTF()
+                response == "PHOTO_TRANSFER_RECEIVER"
             }
         } catch (e: Exception) {
             false

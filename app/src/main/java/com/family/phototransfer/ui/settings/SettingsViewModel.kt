@@ -23,14 +23,15 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "se
 private object Keys {
     val AUTO_SYNC_ENABLED    = booleanPreferencesKey("auto_sync_enabled")
     val SYNC_INTERVAL_HOURS  = intPreferencesKey("sync_interval_hours")
-    val SYNC_START_HOUR      = intPreferencesKey("sync_start_hour")         // 0~23
-    val SYNC_START_MINUTE    = intPreferencesKey("sync_start_minute")       // ✅ 0 or 30
-    val SYNC_FROM_DATE       = stringPreferencesKey("sync_from_date")       // "YYYY-MM-DD", "ALL", "RECENT_3", "RECENT_7"
+    val SYNC_START_HOUR      = intPreferencesKey("sync_start_hour")
+    val SYNC_START_MINUTE    = intPreferencesKey("sync_start_minute")
+    val SYNC_FROM_DATE       = stringPreferencesKey("sync_from_date")
     val PIXEL_IP             = stringPreferencesKey("pixel_ip")
     val SKIP_DUPLICATES      = booleanPreferencesKey("skip_duplicates")
     val NOTIFY_ON_SEND       = booleanPreferencesKey("notify_on_send")
     val NOTIFY_ON_RECEIVE    = booleanPreferencesKey("notify_on_receive")
     val SYNC_FOLDERS         = stringPreferencesKey("sync_folders")
+    val AUTO_START_ON_BOOT   = booleanPreferencesKey("auto_start_on_boot") // ✅ 부팅 시 수신 자동 시작
 }
 
 // ✅ 동기화 주기 옵션 (시간 단위로 저장)

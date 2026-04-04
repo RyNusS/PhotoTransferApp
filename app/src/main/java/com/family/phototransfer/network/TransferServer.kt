@@ -26,21 +26,29 @@ data class ReceivedFile(
 )
 
 class TransferServer(
-    private val saveDirectory:  File,           // Android 9 이하 전용
+    private val saveDirectory:  File,
     private val onFileReceived: (ReceivedFile) -> Unit,
     private val onError:        (String) -> Unit,
-    private val context:        Context? = null // Android 10+ 필수
+    private val context:        Context? = null
 ) {
     private var serverSocket: ServerSocket? = null
+    private var discoverySocket: ServerSocket? = null  // ✅ 탐색 전용 소켓
     var isRunning = false
         private set
 
     suspend fun start() = withContext(Dispatchers.IO) {
         try {
-            serverSocket = ServerSocket(TRANSFER_PORT)
+            serverSocket   = ServerSocket(TRANSFER_PORT)
+            discoverySocket = ServerSocket(DISCOVERY_PORT)
             isRunning = true
-            Log.d(TAG, "서버 시작 - 포트: $TRANSFER_PORT (Android ${Build.VERSION.SDK_INT})")
+            Log.d(TAG, "서버 시작 - 전송포트: $TRANSFER_PORT, 탐색포트: $DISCOVERY_PORT")
 
+            // 탐색 포트 리스너를 별도 스레드로 실행
+            val discoveryThread = Thread {
+                runDiscoveryListener()
+            }.apply { isDaemon = true; start() }
+
+            // 전송 포트 메인 루프
             while (isActive && isRunning) {
                 try {
                     val clientSocket = serverSocket?.accept() ?: break
@@ -58,6 +66,30 @@ class TransferServer(
             onError("서버 시작 실패: ${e.message}")
         } finally {
             isRunning = false
+        }
+    }
+
+    /**
+     * 탐색 포트(9877) 리스너
+     * 연결 요청이 오면 "PHOTO_TRANSFER_RECEIVER" 응답 후 즉시 종료
+     * → 파일 전송 포트(9876)에는 전혀 영향 없음
+     */
+    private fun runDiscoveryListener() {
+        while (isRunning) {
+            try {
+                val client = discoverySocket?.accept() ?: break
+                Thread {
+                    client.use {
+                        try {
+                            val output = DataOutputStream(client.getOutputStream())
+                            output.writeUTF("PHOTO_TRANSFER_RECEIVER")
+                            output.flush()
+                        } catch (_: Exception) {}
+                    }
+                }.start()
+            } catch (e: Exception) {
+                if (isRunning) Log.e(TAG, "탐색 리스너 오류: ${e.message}")
+            }
         }
     }
 
@@ -250,6 +282,8 @@ class TransferServer(
         try {
             serverSocket?.close()
             serverSocket = null
+            discoverySocket?.close()
+            discoverySocket = null
             Log.d(TAG, "서버 중지")
         } catch (e: Exception) {
             Log.e(TAG, "서버 중지 오류: ${e.message}")

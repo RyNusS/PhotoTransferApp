@@ -3,6 +3,7 @@ package com.family.phototransfer.ui.receiver
 import android.content.Context
 import android.os.Environment
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.family.phototransfer.data.repository.TransferRepository
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,10 +33,11 @@ data class ReceivedFileUi(
 )
 
 data class ReceiverUiState(
-    val isListening:   Boolean = false,
-    val myIpAddress:   String  = "",
-    val receivedFiles: List<ReceivedFileUi> = emptyList(),
-    val statusMessage: String = "수신 대기 중..."
+    val isListening:      Boolean = false,
+    val myIpAddress:      String  = "",
+    val receivedFiles:    List<ReceivedFileUi> = emptyList(),
+    val statusMessage:    String  = "수신 대기 중...",
+    val autoStartOnBoot:  Boolean = false   // ✅ 부팅 시 수신 자동 시작
 )
 
 @HiltViewModel
@@ -54,6 +57,27 @@ class ReceiverViewModel @Inject constructor(
 
     init {
         _uiState.value = _uiState.value.copy(myIpAddress = getLocalIpAddress())
+        // DataStore에서 부팅 자동 시작 설정 로드
+        viewModelScope.launch {
+            context.dataStore.data
+                .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+                .first()
+                .let { prefs ->
+                    _uiState.value = _uiState.value.copy(
+                        autoStartOnBoot = prefs[booleanPreferencesKey("auto_start_on_boot")] ?: false
+                    )
+                }
+        }
+    }
+
+    // ✅ 부팅 시 자동 시작 토글 — DataStore에 저장
+    fun toggleAutoStartOnBoot(enabled: Boolean) {
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                prefs[booleanPreferencesKey("auto_start_on_boot")] = enabled
+            }
+            _uiState.value = _uiState.value.copy(autoStartOnBoot = enabled)
+        }
     }
 
     fun startListening() {

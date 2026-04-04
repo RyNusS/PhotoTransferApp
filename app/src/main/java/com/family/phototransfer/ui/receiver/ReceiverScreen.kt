@@ -56,11 +56,13 @@ fun ReceiverScreen(
 
         item {
             ReceiverStatusCard(
-                isRunning     = uiState.isListening,
-                myIp          = uiState.myIpAddress,
-                statusMessage = uiState.statusMessage,
-                onStart       = { viewModel.startListening() },
-                onStop        = { viewModel.stopListening() }
+                isRunning        = uiState.isListening,
+                myIp             = uiState.myIpAddress,
+                statusMessage    = uiState.statusMessage,
+                autoStartOnBoot  = uiState.autoStartOnBoot,
+                onStart          = { viewModel.startListening() },
+                onStop           = { viewModel.stopListening() },
+                onToggleAutoStart = { viewModel.toggleAutoStartOnBoot(it) }
             )
         }
 
@@ -123,11 +125,13 @@ fun ReceiverHeader() {
 
 @Composable
 fun ReceiverStatusCard(
-    isRunning:     Boolean,
-    myIp:          String,
-    statusMessage: String,
-    onStart:       () -> Unit,
-    onStop:        () -> Unit
+    isRunning:        Boolean,
+    myIp:             String,
+    statusMessage:    String,
+    autoStartOnBoot:  Boolean,
+    onStart:          () -> Unit,
+    onStop:           () -> Unit,
+    onToggleAutoStart: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -187,6 +191,7 @@ fun ReceiverStatusCard(
 
             Spacer(Modifier.height(20.dp))
 
+            // 수신 시작/중지 버튼
             Button(
                 onClick  = if (isRunning) onStop else onStart,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -206,6 +211,54 @@ fun ReceiverStatusCard(
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // ✅ 부팅 시 수신 자동 시작 토글
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (autoStartOnBoot) PrimaryBlue.copy(alpha = 0.08f) else Color(0xFF0D1117))
+                    .border(
+                        0.5.dp,
+                        if (autoStartOnBoot) PrimaryBlue.copy(alpha = 0.3f) else CardBorder,
+                        RoundedCornerShape(10.dp)
+                    )
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.RestartAlt,
+                    contentDescription = null,
+                    tint = if (autoStartOnBoot) PrimaryBlue else TextSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "앱 시작 시 수신 자동 시작",
+                        color = if (autoStartOnBoot) TextPrimary else TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "폰 재시작 후 자동으로 수신 대기",
+                        color = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+                Switch(
+                    checked = autoStartOnBoot,
+                    onCheckedChange = onToggleAutoStart,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor   = Color.White,
+                        checkedTrackColor   = PrimaryBlue,
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = CardBorder
+                    )
                 )
             }
         }

@@ -420,18 +420,18 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
+      static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
 
       static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
 
       static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
 
-      static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
-
       static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
 
+      static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
+
       @KeepFieldType
-      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
+      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
 
       @KeepFieldType
       SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
@@ -440,10 +440,10 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
       SettingsViewModel com_family_phototransfer_ui_settings_SettingsViewModel2;
 
       @KeepFieldType
-      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
+      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
 
       @KeepFieldType
-      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
+      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
     }
   }
 
@@ -496,30 +496,30 @@ public final class DaggerPhotoTransferApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
-
-      static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
+      static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
 
       static String com_family_phototransfer_ui_settings_SettingsViewModel = "com.family.phototransfer.ui.settings.SettingsViewModel";
 
+      static String com_family_phototransfer_ui_receiver_ReceiverViewModel = "com.family.phototransfer.ui.receiver.ReceiverViewModel";
+
+      static String com_family_phototransfer_ui_dashboard_SenderDashboardViewModel = "com.family.phototransfer.ui.dashboard.SenderDashboardViewModel";
+
       static String com_family_phototransfer_ui_upload_UploadViewModel = "com.family.phototransfer.ui.upload.UploadViewModel";
 
-      static String com_family_phototransfer_ui_history_HistoryViewModel = "com.family.phototransfer.ui.history.HistoryViewModel";
-
       @KeepFieldType
-      SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
-
-      @KeepFieldType
-      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
+      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
 
       @KeepFieldType
       SettingsViewModel com_family_phototransfer_ui_settings_SettingsViewModel2;
 
       @KeepFieldType
-      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
+      ReceiverViewModel com_family_phototransfer_ui_receiver_ReceiverViewModel2;
 
       @KeepFieldType
-      HistoryViewModel com_family_phototransfer_ui_history_HistoryViewModel2;
+      SenderDashboardViewModel com_family_phototransfer_ui_dashboard_SenderDashboardViewModel2;
+
+      @KeepFieldType
+      UploadViewModel com_family_phototransfer_ui_upload_UploadViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {

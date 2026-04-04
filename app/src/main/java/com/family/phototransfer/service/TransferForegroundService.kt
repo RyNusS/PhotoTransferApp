@@ -74,7 +74,6 @@ class TransferForegroundService : Service() {
                     onFileReceived = { received ->
                         Log.d(TAG, "파일 수신 완료: ${received.fileName}")
                         updateNotification("수신 완료: ${received.fileName}")
-                        receiverStateHolder.setReceiving(true)
                     },
                     onError = { errorMsg ->
                         Log.e(TAG, "수신 오류: $errorMsg")
@@ -82,6 +81,7 @@ class TransferForegroundService : Service() {
                     }
                 )
 
+                // ✅ 서버 시작 직전에만 setReceiving(true) → Settings 탐색과 무관
                 receiverStateHolder.setReceiving(true)
                 updateNotification("수신 대기 중... (포트 9876)")
                 Log.d(TAG, "TransferServer 시작")
@@ -90,6 +90,8 @@ class TransferForegroundService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "수신 서버 오류: ${e.message}")
                 updateNotification("서버 오류: ${e.message}")
+                receiverStateHolder.setReceiving(false)
+                transferServer = null
             }
         }
     }
