@@ -250,19 +250,8 @@ class SettingsViewModel @Inject constructor(
 
     // ── 즉시 동기화 ───────────────────────────────────────────
     fun runSyncNow() {
-        val state = _uiState.value
-        _uiState.value = state.copy(isSyncRunning = true)
-        // ✅ 활성화된 폴더 경로만 pipe로 연결
-        val enabledFolders = state.syncFolders
-            .filter { it.enabled }
-            .joinToString("|") { it.path }
-        AutoSyncScheduler.runOnce(
-            context      = context,
-            receiverIp   = state.pixelIpAddress,
-            syncFromDate = state.syncFromDateResolved,
-            syncFolders  = enabledFolders,
-            notifyOnSend = state.notifyOnSend
-        )
+        _uiState.value = _uiState.value.copy(isSyncRunning = true)
+        AutoSyncScheduler.runOnce(context)
         viewModelScope.launch {
             kotlinx.coroutines.delay(3000)
             _uiState.value = _uiState.value.copy(isSyncRunning = false)
@@ -272,19 +261,11 @@ class SettingsViewModel @Inject constructor(
     // ── 내부 헬퍼 ─────────────────────────────────────────────
     private fun scheduleAutoSync() {
         val state = _uiState.value
-        // ✅ 활성화된 폴더 경로만 pipe로 연결
-        val enabledFolders = state.syncFolders
-            .filter { it.enabled }
-            .joinToString("|") { it.path }
         AutoSyncScheduler.schedule(
             context       = context,
             intervalHours = state.syncInterval.hours,
             startHour     = state.syncStartHour,
-            startMinute   = state.syncStartMinute,
-            receiverIp    = state.pixelIpAddress,
-            syncFromDate  = state.syncFromDateResolved,
-            syncFolders   = enabledFolders,
-            notifyOnSend  = state.notifyOnSend
+            startMinute   = state.syncStartMinute
         )
     }
 
