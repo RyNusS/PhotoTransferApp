@@ -32,6 +32,8 @@ private object Keys {
     val NOTIFY_ON_RECEIVE    = booleanPreferencesKey("notify_on_receive")
     val SYNC_FOLDERS         = stringPreferencesKey("sync_folders")
     val AUTO_START_ON_BOOT   = booleanPreferencesKey("auto_start_on_boot") // ✅ 부팅 시 수신 자동 시작
+    val USE_REMOTE_MODE      = booleanPreferencesKey("use_remote_mode")   // 원격 연결 모드
+    val REMOTE_HOST          = stringPreferencesKey("remote_host")         // Tailscale 호스트 주소
 }
 
 // ✅ 동기화 주기 옵션 (시간 단위로 저장)
@@ -74,7 +76,10 @@ data class SettingsUiState(
     // ✅ 4번 - 기기 탐색
     val isScanning:        Boolean              = false,
     val discoveredDevices: List<com.family.phototransfer.network.DiscoveredDevice> = emptyList(),
-    val scanError:         String?              = null
+    val scanError:         String?              = null,
+    // 원격 연결 (Tailscale)
+    val useRemoteMode:     Boolean              = false,
+    val remoteHost:        String               = ""
 ) {
     val syncIntervalText: String get() = syncInterval.label
     // AM/PM 12시간 표시
@@ -126,7 +131,9 @@ class SettingsViewModel @Inject constructor(
                     notifyOnSend      = prefs[Keys.NOTIFY_ON_SEND]      ?: true,
                     notifyOnReceive   = prefs[Keys.NOTIFY_ON_RECEIVE]   ?: true,
                     syncFolders       = parseFolders(prefs[Keys.SYNC_FOLDERS] ?: ""),
-                    availableFolders  = _uiState.value.availableFolders
+                    availableFolders  = _uiState.value.availableFolders,
+                    useRemoteMode     = prefs[Keys.USE_REMOTE_MODE] ?: false,
+                    remoteHost        = prefs[Keys.REMOTE_HOST]     ?: ""
                 )
             }
         }
@@ -215,6 +222,15 @@ class SettingsViewModel @Inject constructor(
 
     fun setNotifyOnReceive(enabled: Boolean) {
         viewModelScope.launch { save(Keys.NOTIFY_ON_RECEIVE, enabled) }
+    }
+
+    // ── 원격 연결 (Tailscale) ──────────────────────────────────
+    fun setUseRemoteMode(enabled: Boolean) {
+        viewModelScope.launch { save(Keys.USE_REMOTE_MODE, enabled) }
+    }
+
+    fun setRemoteHost(host: String) {
+        viewModelScope.launch { save(Keys.REMOTE_HOST, host.trim()) }
     }
 
     // ── 폴더 관리 ─────────────────────────────────────────────

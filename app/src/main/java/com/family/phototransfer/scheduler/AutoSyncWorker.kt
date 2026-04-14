@@ -112,9 +112,18 @@ class AutoSyncWorker @AssistedInject constructor(
     }
 
     private suspend fun findReceiverDevice(): String? {
-        // DataStore에 저장된 IP 우선
-        val saved = context.dataStore.data.first()[stringPreferencesKey("pixel_ip")]
-            ?.takeIf { it.isNotBlank() }
+        val prefs = context.dataStore.data
+            .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+            .first()
+
+        // 원격 연결 모드: Tailscale 호스트 주소 우선 사용, WiFi 스캔 생략
+        val useRemoteMode = prefs[booleanPreferencesKey("use_remote_mode")] ?: false
+        if (useRemoteMode) {
+            return prefs[stringPreferencesKey("remote_host")]?.takeIf { it.isNotBlank() }
+        }
+
+        // 로컬 모드: DataStore에 저장된 IP 우선, 없으면 WiFi 스캔
+        val saved = prefs[stringPreferencesKey("pixel_ip")]?.takeIf { it.isNotBlank() }
         if (saved != null) return saved
         return withContext(Dispatchers.IO) {
             WifiDeviceScanner(context).scanNetwork().firstOrNull()?.ipAddress

@@ -23,6 +23,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.hilt.navigation.compose.hiltViewModel
 import java.util.Calendar
 
@@ -39,6 +43,12 @@ private val TextSecondary = Color(0xFF8B9BB4)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // 원격 호스트 입력 필드 로컬 상태 (DataStore 로드 완료 후 동기화)
+    var remoteHostInput by remember { mutableStateOf(uiState.remoteHost) }
+    LaunchedEffect(uiState.remoteHost) {
+        remoteHostInput = uiState.remoteHost
+    }
 
     // 날짜 선택 다이얼로그
     if (uiState.showDatePicker) {
@@ -404,95 +414,132 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         // ── 5. 수신 기기 ───────────────────────────────────────
         item {
             SettingsSection(title = "수신 기기") {
-                // 현재 저장된 IP 표시
-                if (uiState.pixelIpAddress.isNotBlank()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(SuccessGreen.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.PhoneAndroid, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
-                        }
+
+                // ── 연결 방식 토글 (로컬 WiFi / 원격 연결) ──────────
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SettingsEthernet, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("연결된 수신 기기", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text(uiState.pixelIpAddress, color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        // 연결 해제 버튼
-                        IconButton(onClick = { viewModel.setPixelIp("") }) {
-                            Icon(Icons.Default.Close, null, tint = ErrorRed.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
-                        }
+                        Text("연결 방식", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                     }
-                    SectionDivider()
-                }
-
-                // 탐색 버튼
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { if (!uiState.isScanning) viewModel.scanForDevices() }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryBlue.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.padding(start = 32.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (uiState.isScanning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                color = PrimaryBlue,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Search, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                        listOf(false to "로컬 WiFi", true to "원격 연결").forEach { (isRemote, label) ->
+                            val isSelected = uiState.useRemoteMode == isRemote
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) PrimaryBlue else CardBorder)
+                                    .border(
+                                        width = if (isSelected) 0.dp else 0.5.dp,
+                                        color = CardBorder,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { viewModel.setUseRemoteMode(isRemote) }
+                                    .padding(vertical = 9.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) Color.White else TextSecondary,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
                         }
                     }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            if (uiState.isScanning) "탐색 중..." else "수신 기기 탐색",
-                            color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            "같은 WiFi에서 수신 앱이 실행 중인 기기 탐색",
-                            color = TextSecondary, fontSize = 11.sp
-                        )
-                    }
-                    if (!uiState.isScanning) {
-                        Icon(Icons.Default.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
-                    }
                 }
+                SectionDivider()
 
-                // 탐색 오류 메시지
-                uiState.scanError?.let { error ->
-                    Text(
-                        text = error,
-                        color = WarningOrange,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
-                    )
-                }
-
-                // 탐색된 기기 목록
-                if (uiState.discoveredDevices.isNotEmpty()) {
-                    SectionDivider()
-                    uiState.discoveredDevices.forEachIndexed { index, device ->
+                if (uiState.useRemoteMode) {
+                    // ── 원격 연결 모드: Tailscale 호스트 입력 ─────────
+                    Column(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.VpnKey, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Tailscale 호스트 주소", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = remoteHostInput,
+                            onValueChange = {
+                                remoteHostInput = it
+                                viewModel.setRemoteHost(it)
+                            },
+                            placeholder = {
+                                Text(
+                                    "pixel.tail1234.ts.net",
+                                    color = TextSecondary.copy(alpha = 0.6f),
+                                    fontSize = 13.sp
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                imeAction    = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = { viewModel.setRemoteHost(remoteHostInput) }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 32.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor   = PrimaryBlue,
+                                unfocusedBorderColor = CardBorder,
+                                focusedTextColor     = TextPrimary,
+                                unfocusedTextColor   = TextPrimary,
+                                cursorColor          = PrimaryBlue
+                            ),
+                            trailingIcon = {
+                                if (remoteHostInput.isNotBlank()) {
+                                    IconButton(onClick = {
+                                        remoteHostInput = ""
+                                        viewModel.setRemoteHost("")
+                                    }) {
+                                        Icon(Icons.Default.Close, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        // 안내 메시지
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.selectDiscoveredDevice(device.ipAddress) }
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PrimaryBlue.copy(alpha = 0.08f))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(Icons.Default.Info, null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Pixel 폰에 Tailscale 앱을 설치하고\n" +
+                                       "Funnel로 포트 9876을 열어두면\n" +
+                                       "Samsung 폰에 Tailscale 없이도 연결됩니다",
+                                color = PrimaryBlue.copy(alpha = 0.85f),
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                } else {
+                    // ── 로컬 WiFi 모드: 기존 탐색 UI ──────────────────
+
+                    // 현재 저장된 IP 표시
+                    if (uiState.pixelIpAddress.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -500,27 +547,110 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(PrimaryBlue.copy(alpha = 0.10f)),
+                                    .background(SuccessGreen.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Wifi, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.PhoneAndroid, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(device.deviceName, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                Text(device.ipAddress,  color = TextSecondary, fontSize = 11.sp)
+                                Text("연결된 수신 기기", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text(uiState.pixelIpAddress, color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
-                            // 선택 버튼
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(PrimaryBlue)
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text("선택", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            IconButton(onClick = { viewModel.setPixelIp("") }) {
+                                Icon(Icons.Default.Close, null, tint = ErrorRed.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                             }
                         }
-                        if (index < uiState.discoveredDevices.lastIndex) SectionDivider()
+                        SectionDivider()
+                    }
+
+                    // 탐색 버튼
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { if (!uiState.isScanning) viewModel.scanForDevices() }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(PrimaryBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (uiState.isScanning) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = PrimaryBlue,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Search, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (uiState.isScanning) "탐색 중..." else "수신 기기 탐색",
+                                color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                "같은 WiFi에서 수신 앱이 실행 중인 기기 탐색",
+                                color = TextSecondary, fontSize = 11.sp
+                            )
+                        }
+                        if (!uiState.isScanning) {
+                            Icon(Icons.Default.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    // 탐색 오류 메시지
+                    uiState.scanError?.let { error ->
+                        Text(
+                            text = error,
+                            color = WarningOrange,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                        )
+                    }
+
+                    // 탐색된 기기 목록
+                    if (uiState.discoveredDevices.isNotEmpty()) {
+                        SectionDivider()
+                        uiState.discoveredDevices.forEachIndexed { index, device ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectDiscoveredDevice(device.ipAddress) }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryBlue.copy(alpha = 0.10f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Wifi, null, tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(device.deviceName, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text(device.ipAddress,  color = TextSecondary, fontSize = 11.sp)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(PrimaryBlue)
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("선택", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            if (index < uiState.discoveredDevices.lastIndex) SectionDivider()
+                        }
                     }
                 }
             }
@@ -530,7 +660,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         item {
             Button(
                 onClick  = { viewModel.runSyncNow() },
-                enabled  = !uiState.isSyncRunning && uiState.pixelIpAddress.isNotBlank(),
+                enabled  = !uiState.isSyncRunning && (
+                    if (uiState.useRemoteMode) uiState.remoteHost.isNotBlank()
+                    else uiState.pixelIpAddress.isNotBlank()
+                ),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape    = RoundedCornerShape(12.dp),
                 colors   = ButtonDefaults.buttonColors(

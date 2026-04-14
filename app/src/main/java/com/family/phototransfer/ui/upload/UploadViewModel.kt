@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.family.phototransfer.network.DiscoveredDevice
@@ -218,6 +219,35 @@ class UploadViewModel @Inject constructor(
     fun scanForDevices(context: Context) {
         if (!_uiState.value.scanEnabled) return
         viewModelScope.launch {
+            // 원격 연결 모드 확인
+            val prefs = context.dataStore.data
+                .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+                .first()
+            val useRemoteMode = prefs[booleanPreferencesKey("use_remote_mode")] ?: false
+            val remoteHost    = prefs[stringPreferencesKey("remote_host")]      ?: ""
+
+            if (useRemoteMode) {
+                // 원격 모드: WiFi 스캔 생략 → remote host를 가상 기기로 즉시 설정
+                if (remoteHost.isNotBlank()) {
+                    val remoteDevice = DiscoveredDevice(
+                        ipAddress  = remoteHost,
+                        deviceName = "원격 연결 (Tailscale)"
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        discoveredDevices = listOf(remoteDevice),
+                        selectedDevice    = remoteDevice,
+                        cloudSyncActive   = true,
+                        errorMessage      = null
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = "설정 탭에서 원격 호스트 주소(Tailscale)를 먼저 입력해주세요"
+                    )
+                }
+                return@launch
+            }
+
+            // 로컬 모드: 기존 WiFi 스캔
             _uiState.value = _uiState.value.copy(isScanning = true, discoveredDevices = emptyList(), selectedDevice = null, errorMessage = null)
             try {
                 val scanner = WifiDeviceScanner(context)
