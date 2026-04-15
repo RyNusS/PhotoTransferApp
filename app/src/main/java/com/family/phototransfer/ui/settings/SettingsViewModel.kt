@@ -124,7 +124,9 @@ class SettingsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             context.dataStore.data.catch { emit(emptyPreferences()) }.collect { prefs ->
-                _uiState.value = SettingsUiState(
+                // copy()로 업데이트: isRemoteScanning, remoteFoundAddress, remoteError 등
+                // UI-only 상태는 DataStore 리로드 시 덮어쓰지 않음
+                _uiState.value = _uiState.value.copy(
                     autoSyncEnabled   = prefs[Keys.AUTO_SYNC_ENABLED]   ?: false,
                     syncInterval      = SyncIntervalOption.fromHours(prefs[Keys.SYNC_INTERVAL_HOURS] ?: 24),
                     syncStartHour     = prefs[Keys.SYNC_START_HOUR]     ?: 8,

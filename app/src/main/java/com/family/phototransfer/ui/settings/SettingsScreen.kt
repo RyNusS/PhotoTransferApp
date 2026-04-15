@@ -506,7 +506,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("수신 기기 탐색 중...", color = Color.White, fontSize = 14.sp)
                             } else {
-                                Icon(Icons.Default.WifiFind, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Wifi, null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     text = if (uiState.remoteFoundAddress.isNotEmpty()) "다시 탐색" else "수신기기 자동연결",
