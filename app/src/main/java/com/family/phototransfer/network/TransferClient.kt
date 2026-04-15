@@ -41,11 +41,19 @@ class TransferClient {
         val isVideo = isVideoFileName(fileName)
         val transferTimeout = if (isVideo) VIDEO_TRANSFER_TIMEOUT_MS else IMAGE_TRANSFER_TIMEOUT_MS
 
-        Log.d(TAG, "전송 시작: $fileName ($fileSize bytes, video=$isVideo) → $receiverIp:$TRANSFER_PORT")
+        // host:port 형식 파싱 (원격 연결 시 bore.pub:52643 등)
+        val (host, port) = if (receiverIp.contains(":")) {
+            val parts = receiverIp.split(":")
+            parts[0] to (parts[1].toIntOrNull() ?: TRANSFER_PORT)
+        } else {
+            receiverIp to TRANSFER_PORT
+        }
+
+        Log.d(TAG, "전송 시작: $fileName ($fileSize bytes, video=$isVideo) → $host:$port")
 
         try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(receiverIp, TRANSFER_PORT), CONNECT_TIMEOUT_MS)
+                socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
                 socket.soTimeout = transferTimeout
 
                 val output = DataOutputStream(socket.getOutputStream().buffered(CHUNK_SIZE))
