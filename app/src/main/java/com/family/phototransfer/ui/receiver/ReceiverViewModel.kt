@@ -79,7 +79,7 @@ class ReceiverViewModel @Inject constructor(
         viewModelScope.launch {
             boreTunnelManager.state.collectLatest { state ->
                 val (statusText, port) = when (state) {
-                    is BoreTunnelState.Idle        -> "대기 중" to null
+                    is BoreTunnelState.Idle        -> "" to null
                     is BoreTunnelState.Downloading -> "bore 다운로드 중..." to null
                     is BoreTunnelState.Connecting  -> "터널 연결 중..." to null
                     is BoreTunnelState.Connected   -> "bore.pub:${state.port}" to state.port
@@ -114,10 +114,8 @@ class ReceiverViewModel @Inject constructor(
             )
             receiverStateHolder.setReceiving(true)
 
-            // ✅ bore 터널 자동 시작 (백그라운드, 실패해도 로컬 서버는 계속)
-            launch {
-                boreTunnelManager.start()
-            }
+            // ✅ bore 터널 자동 시작 (백그라운드, 실패해도 로컬 서버는 계속 동작)
+            launch { boreTunnelManager.start() }
 
             withContext(Dispatchers.IO) {
                 if (!saveDir.exists()) saveDir.mkdirs()
@@ -174,7 +172,7 @@ class ReceiverViewModel @Inject constructor(
             server?.stop()
             server = null
         }
-        boreTunnelManager.stop()   // ✅ bore 터널도 함께 중지
+        boreTunnelManager.stop()
         receiverStateHolder.setReceiving(false)
         _uiState.value = _uiState.value.copy(
             isListening      = false,

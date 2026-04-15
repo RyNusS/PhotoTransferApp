@@ -56,14 +56,12 @@ fun ReceiverScreen(
 
         item {
             ReceiverStatusCard(
-                isRunning         = uiState.isListening,
-                myIp              = uiState.myIpAddress,
-                statusMessage     = uiState.statusMessage,
-                autoStartOnBoot   = uiState.autoStartOnBoot,
-                boreTunnelStatus  = uiState.boreTunnelStatus,
-                boreTunnelPort    = uiState.boreTunnelPort,
-                onStart           = { viewModel.startListening() },
-                onStop            = { viewModel.stopListening() },
+                isRunning        = uiState.isListening,
+                myIp             = uiState.myIpAddress,
+                statusMessage    = uiState.statusMessage,
+                autoStartOnBoot  = uiState.autoStartOnBoot,
+                onStart          = { viewModel.startListening() },
+                onStop           = { viewModel.stopListening() },
                 onToggleAutoStart = { viewModel.toggleAutoStartOnBoot(it) }
             )
         }
@@ -127,14 +125,12 @@ fun ReceiverHeader() {
 
 @Composable
 fun ReceiverStatusCard(
-    isRunning:         Boolean,
-    myIp:              String,
-    statusMessage:     String,
-    autoStartOnBoot:   Boolean,
-    boreTunnelStatus:  String  = "",
-    boreTunnelPort:    Int?    = null,
-    onStart:           () -> Unit,
-    onStop:            () -> Unit,
+    isRunning:        Boolean,
+    myIp:             String,
+    statusMessage:    String,
+    autoStartOnBoot:  Boolean,
+    onStart:          () -> Unit,
+    onStop:           () -> Unit,
     onToggleAutoStart: (Boolean) -> Unit
 ) {
     Card(
@@ -191,52 +187,6 @@ fun ReceiverStatusCard(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text("같은 WiFi에 연결된 폰에서 자동으로 탐색됩니다", color = TextSecondary, fontSize = 11.sp)
-            }
-
-            // ✅ bore 터널 상태 표시
-            if (isRunning && boreTunnelStatus.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                val isBoreConnected = boreTunnelPort != null
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (isBoreConnected) SuccessGreen.copy(alpha = 0.08f)
-                            else PrimaryBlue.copy(alpha = 0.06f)
-                        )
-                        .border(
-                            0.5.dp,
-                            if (isBoreConnected) SuccessGreen.copy(alpha = 0.4f)
-                            else PrimaryBlue.copy(alpha = 0.2f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Cloud,
-                            contentDescription = null,
-                            tint = if (isBoreConnected) SuccessGreen else TextSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "원격 터널",
-                            color = if (isBoreConnected) SuccessGreen else TextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    Text(
-                        text = boreTunnelStatus,
-                        color = if (isBoreConnected) SuccessGreen else TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = if (isBoreConnected) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -407,3 +357,4 @@ private fun formatBytes(bytes: Long): String {
         else                   -> "$bytes B"
     }
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

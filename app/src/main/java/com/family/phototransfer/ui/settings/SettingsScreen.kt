@@ -23,10 +23,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.hilt.navigation.compose.hiltViewModel
 import java.util.Calendar
 
@@ -43,12 +39,6 @@ private val TextSecondary = Color(0xFF8B9BB4)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-
-    // 원격 호스트 입력 필드 로컬 상태 (DataStore 로드 완료 후 동기화)
-    var remoteHostInput by remember { mutableStateOf(uiState.remoteHost) }
-    LaunchedEffect(uiState.remoteHost) {
-        remoteHostInput = uiState.remoteHost
-    }
 
     // 날짜 선택 다이얼로그
     if (uiState.showDatePicker) {
@@ -456,75 +446,89 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 SectionDivider()
 
                 if (uiState.useRemoteMode) {
-                    // ── 원격 연결 모드: Tailscale 호스트 입력 ─────────
+                    // ── 원격 연결 모드: bore.pub 자동 탐색 ────────────
                     Column(modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.VpnKey, null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Tailscale 호스트 주소", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = remoteHostInput,
-                            onValueChange = {
-                                remoteHostInput = it
-                                viewModel.setRemoteHost(it)
-                            },
-                            placeholder = {
-                                Text(
-                                    "pixel.tail1234.ts.net",
-                                    color = TextSecondary.copy(alpha = 0.6f),
-                                    fontSize = 13.sp
-                                )
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Uri,
-                                imeAction    = ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = { viewModel.setRemoteHost(remoteHostInput) }
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 32.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor   = PrimaryBlue,
-                                unfocusedBorderColor = CardBorder,
-                                focusedTextColor     = TextPrimary,
-                                unfocusedTextColor   = TextPrimary,
-                                cursorColor          = PrimaryBlue
-                            ),
-                            trailingIcon = {
-                                if (remoteHostInput.isNotBlank()) {
-                                    IconButton(onClick = {
-                                        remoteHostInput = ""
-                                        viewModel.setRemoteHost("")
-                                    }) {
-                                        Icon(Icons.Default.Close, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
-                                    }
+                        // 발견된 주소 표시
+                        if (uiState.remoteFoundAddress.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SuccessGreen.copy(alpha = 0.08f))
+                                    .border(0.5.dp, SuccessGreen.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Cloud, null, tint = SuccessGreen, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("수신 기기 연결됨", color = SuccessGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(uiState.remoteFoundAddress, color = SuccessGreen.copy(alpha = 0.8f), fontSize = 11.sp)
                                 }
+                                Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
                             }
-                        )
+                            Spacer(Modifier.height(10.dp))
+                        }
+
+                        // 오류 메시지
+                        uiState.remoteError?.let { error ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(WarningOrange.copy(alpha = 0.08f))
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(Icons.Default.Warning, null, tint = WarningOrange, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(error, color = WarningOrange, fontSize = 11.sp, lineHeight = 16.sp)
+                            }
+                            Spacer(Modifier.height(10.dp))
+                        }
+
+                        // 수신기기 자동연결 버튼
+                        Button(
+                            onClick  = { viewModel.scanForRemoteDevice() },
+                            enabled  = !uiState.isRemoteScanning,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape    = RoundedCornerShape(10.dp),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor         = PrimaryBlue,
+                                disabledContainerColor = CardBg
+                            )
+                        ) {
+                            if (uiState.isRemoteScanning) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("수신 기기 탐색 중...", color = Color.White, fontSize = 14.sp)
+                            } else {
+                                Icon(Icons.Default.WifiFind, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (uiState.remoteFoundAddress.isNotEmpty()) "다시 탐색" else "수신기기 자동연결",
+                                    color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
                         Spacer(Modifier.height(10.dp))
                         // 안내 메시지
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(PrimaryBlue.copy(alpha = 0.08f))
+                                .background(PrimaryBlue.copy(alpha = 0.06f))
                                 .padding(10.dp),
                             verticalAlignment = Alignment.Top
                         ) {
                             Icon(Icons.Default.Info, null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Pixel 폰에 Tailscale 앱을 설치하고\n" +
-                                       "Funnel로 포트 9876을 열어두면\n" +
-                                       "Samsung 폰에 Tailscale 없이도 연결됩니다",
+                                text = "픽셀 폰에서 수신 모드를 시작하면\n버튼을 눌러 자동으로 연결됩니다",
                                 color = PrimaryBlue.copy(alpha = 0.85f),
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
@@ -661,7 +665,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Button(
                 onClick  = { viewModel.runSyncNow() },
                 enabled  = !uiState.isSyncRunning && (
-                    if (uiState.useRemoteMode) uiState.remoteHost.isNotBlank()
+                    if (uiState.useRemoteMode) uiState.remoteFoundAddress.isNotBlank()
                     else uiState.pixelIpAddress.isNotBlank()
                 ),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -692,7 +696,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         // ── 앱 버전 ────────────────────────────────────────────
         item {
             Text(
-                text     = "v2.0",
+                text     = "v${com.family.phototransfer.BuildConfig.VERSION_NAME}",
                 color    = TextSecondary.copy(alpha = 0.5f),
                 fontSize = 12.sp,
                 modifier = Modifier
