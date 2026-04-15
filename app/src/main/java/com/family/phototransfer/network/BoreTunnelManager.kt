@@ -135,7 +135,7 @@ class BoreTunnelManager @Inject constructor(
                     val exit = process.exitValue()
                     Log.d(TAG, "bore[$port] 조기 종료: exitCode=$exit")
                     return null
-                } catch (_: IllegalThreadStateException) {
+                } catch (ignored: IllegalThreadStateException) {
                     // 아직 실행 중 → 계속 대기
                 }
             }
@@ -144,7 +144,7 @@ class BoreTunnelManager @Inject constructor(
             return try {
                 process.exitValue()
                 null // 종료됐으면 실패
-            } catch (_: IllegalThreadStateException) {
+            } catch (ignored: IllegalThreadStateException) {
                 Thread { reader.forEachLine { Log.d(TAG, "bore: $it") } }.start()
                 process
             }
