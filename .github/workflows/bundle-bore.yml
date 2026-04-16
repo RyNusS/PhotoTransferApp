@@ -1,7 +1,11 @@
 name: Bundle bore binary into jniLibs
 
 on:
-  workflow_dispatch:  # 수동 1회 실행용
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/bundle-bore.yml'   # 이 파일 수정 시에만 실행
+  workflow_dispatch:
 
 jobs:
   bundle-bore:
@@ -13,7 +17,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Skip if libbore.so already exists
+        id: check
+        run: |
+          if [ -f "app/src/main/jniLibs/arm64-v8a/libbore.so" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "libbore.so already exists, skipping download"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download bore v0.6.0 aarch64-linux-musl
+        if: steps.check.outputs.skip == 'false'
         run: |
           curl -L "https://github.com/ekzhang/bore/releases/download/v0.6.0/bore-v0.6.0-aarch64-unknown-linux-musl.tar.gz" \
             -o bore.tar.gz
@@ -22,12 +37,14 @@ jobs:
           file bore
 
       - name: Place bore binary as libbore.so in jniLibs
+        if: steps.check.outputs.skip == 'false'
         run: |
           mkdir -p app/src/main/jniLibs/arm64-v8a
           cp bore app/src/main/jniLibs/arm64-v8a/libbore.so
           ls -lh app/src/main/jniLibs/arm64-v8a/
 
       - name: Commit and push
+        if: steps.check.outputs.skip == 'false'
         run: |
           git config user.email "doa4004@gmail.com"
           git config user.name "RyNusS"
