@@ -139,6 +139,17 @@ class BoreTunnelManager @Inject constructor(
                 // 프로세스가 이미 종료됐으면 실패
                 try {
                     val exit = process.exitValue()
+                    // 종료 후 남은 출력 전체 드레인 → bore의 실제 에러 메시지 확인
+                    try {
+                        val remaining = reader.readText()
+                        if (remaining.isNotBlank()) {
+                            Log.d(TAG, "bore[$port] 종료 시 출력: '${remaining.trim()}'")
+                        } else {
+                            Log.d(TAG, "bore[$port] 종료 시 출력 없음")
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "bore[$port] 출력 드레인 실패: ${e.message}")
+                    }
                     Log.d(TAG, "bore[$port] 조기 종료: exitCode=$exit")
                     return null
                 } catch (ignored: IllegalThreadStateException) {
