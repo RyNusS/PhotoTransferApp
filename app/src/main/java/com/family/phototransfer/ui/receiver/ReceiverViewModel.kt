@@ -80,7 +80,6 @@ class ReceiverViewModel @Inject constructor(
             boreTunnelManager.state.collectLatest { state ->
                 val (statusText, port) = when (state) {
                     is BoreTunnelState.Idle        -> "" to null
-                    is BoreTunnelState.Downloading -> "bore 다운로드 중..." to null
                     is BoreTunnelState.Connecting  -> "터널 연결 중..." to null
                     is BoreTunnelState.Connected   -> "bore.pub:${state.port}" to state.port
                     is BoreTunnelState.Error       -> "오류: ${state.message}" to null
@@ -205,8 +204,4 @@ class ReceiverViewModel @Inject constructor(
     private fun formatSize(bytes: Long): String {
         return when {
             bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-            bytes >= 1_024     -> "%.1f KB".format(bytes / 1_024.0)
-            else               -> "$bytes B"
-        }
-    }
-}
+            by
