@@ -28,7 +28,8 @@
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.PhotoTransfer">
+        android:theme="@style/Theme.PhotoTransfer"
+        android:extractNativeLibs="true">
 
         <activity
             android:name=".MainActivity"
@@ -85,7 +86,4 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
-        </provider>
-
-    </application>
-</manifest>
+        </p

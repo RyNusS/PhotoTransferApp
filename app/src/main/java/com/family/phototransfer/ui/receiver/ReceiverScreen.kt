@@ -56,12 +56,14 @@ fun ReceiverScreen(
 
         item {
             ReceiverStatusCard(
-                isRunning        = uiState.isListening,
-                myIp             = uiState.myIpAddress,
-                statusMessage    = uiState.statusMessage,
-                autoStartOnBoot  = uiState.autoStartOnBoot,
-                onStart          = { viewModel.startListening() },
-                onStop           = { viewModel.stopListening() },
+                isRunning         = uiState.isListening,
+                myIp              = uiState.myIpAddress,
+                statusMessage     = uiState.statusMessage,
+                autoStartOnBoot   = uiState.autoStartOnBoot,
+                boreTunnelStatus  = uiState.boreTunnelStatus,
+                boreTunnelPort    = uiState.boreTunnelPort,
+                onStart           = { viewModel.startListening() },
+                onStop            = { viewModel.stopListening() },
                 onToggleAutoStart = { viewModel.toggleAutoStartOnBoot(it) }
             )
         }
@@ -125,12 +127,14 @@ fun ReceiverHeader() {
 
 @Composable
 fun ReceiverStatusCard(
-    isRunning:        Boolean,
-    myIp:             String,
-    statusMessage:    String,
-    autoStartOnBoot:  Boolean,
-    onStart:          () -> Unit,
-    onStop:           () -> Unit,
+    isRunning:         Boolean,
+    myIp:              String,
+    statusMessage:     String,
+    autoStartOnBoot:   Boolean,
+    boreTunnelStatus:  String  = "",
+    boreTunnelPort:    Int?    = null,
+    onStart:           () -> Unit,
+    onStop:            () -> Unit,
     onToggleAutoStart: (Boolean) -> Unit
 ) {
     Card(
@@ -187,6 +191,52 @@ fun ReceiverStatusCard(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text("같은 WiFi에 연결된 폰에서 자동으로 탐색됩니다", color = TextSecondary, fontSize = 11.sp)
+            }
+
+            // bore 터널 상태 표시 (수신 중일 때)
+            if (isRunning && boreTunnelStatus.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                val isBoreConnected = boreTunnelPort != null
+                val isErrorState = boreTunnelStatus.startsWith("오류")
+                val boreColor = when {
+                    isBoreConnected -> SuccessGreen
+                    isErrorState    -> Color(0xFFFF4444)
+                    else            -> WarningOrange
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(boreColor.copy(alpha = 0.08f))
+                        .border(0.5.dp, boreColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isBoreConnected) Icons.Default.Cloud
+                                      else if (isErrorState) Icons.Default.CloudOff
+                                      else Icons.Default.CloudSync,
+                        contentDescription = null,
+                        tint = boreColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = if (isBoreConnected) "원격 터널 연결됨"
+                                   else if (isErrorState) "원격 터널 오류"
+                                   else "원격 터널 연결 중...",
+                            color = boreColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = boreTunnelStatus,
+                            color = boreColor.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -283,77 +333,4 @@ fun StorageCard(receivedCount: Int, receivedSizeText: String) {
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(CardBorder))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(receivedSizeText, color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("수신된 용량", color = TextSecondary, fontSize = 11.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun ReceivedFileItem(file: ReceivedFileUi) {
-    val isVideo = file.fileName.lowercase().let {
-        it.endsWith(".mp4") || it.endsWith(".mov") || it.endsWith(".avi") || it.endsWith(".mkv")
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(CardBg)
-            .border(0.5.dp, CardBorder, RoundedCornerShape(10.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(PrimaryBlue.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (isVideo) Icons.Default.VideoFile else Icons.Default.Image,
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text       = file.fileName,
-                color      = TextPrimary,
-                fontSize   = 13.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines   = 1
-            )
-            Text("${file.sizeText} · ${file.timeText}", color = TextSecondary, fontSize = 11.sp)
-        }
-
-        Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
-    }
-}
-
-private fun parseSizeText(sizeText: String): Long {
-    return try {
-        val parts = sizeText.trim().split(" ")
-        val value = parts[0].toDouble()
-        when (parts.getOrNull(1)?.uppercase()) {
-            "GB" -> (value * 1_073_741_824).toLong()
-            "MB" -> (value * 1_048_576).toLong()
-            "KB" -> (value * 1_024).toLong()
-            else -> value.toLong()
-        }
-    } catch (e: Exception) { 0L }
-}
-
-private fun formatBytes(bytes: Long): String {
-    return when {
-        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-        bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
-        bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
-        else                   -> "$bytes B"
-    }
-}
+                T
