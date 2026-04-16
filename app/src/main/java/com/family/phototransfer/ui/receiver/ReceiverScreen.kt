@@ -38,7 +38,7 @@ fun ReceiverScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
-        if (autoStart && \!uiState.isListening) {
+        if (autoStart && !uiState.isListening) {
             viewModel.startListening()
         }
     }
@@ -193,7 +193,7 @@ fun ReceiverStatusCard(
 
             if (isRunning && boreTunnelStatus.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                val isBoreConnected = boreTunnelPort \!= null
+                val isBoreConnected = boreTunnelPort != null
                 val isErrorState = boreTunnelStatus.startsWith("오류")
                 val boreColor = when {
                     isBoreConnected -> SuccessGreen

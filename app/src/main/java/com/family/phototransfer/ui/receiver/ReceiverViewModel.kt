@@ -112,7 +112,7 @@ class ReceiverViewModel @Inject constructor(
             launch { boreTunnelManager.start() }
 
             withContext(Dispatchers.IO) {
-                if (\!saveDir.exists()) saveDir.mkdirs()
+                if (!saveDir.exists()) saveDir.mkdirs()
 
                 server = TransferServer(
                     saveDirectory  = saveDir,
@@ -187,7 +187,7 @@ class ReceiverViewModel @Inject constructor(
                 .toList()
                 .flatMap { it.inetAddresses.toList() }
                 .firstOrNull {
-                    \!it.isLoopbackAddress &&
+                    !it.isLoopbackAddress &&
                     it is java.net.Inet4Address &&
                     it.hostAddress?.startsWith("192.168") == true
                 }
