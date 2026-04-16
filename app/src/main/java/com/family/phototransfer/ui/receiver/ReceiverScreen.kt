@@ -37,10 +37,8 @@ fun ReceiverScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // autoStart=true이면 화면 진입 즉시 수신 시작
-    // Unit을 key로 사용해 최초 1회만 실행
     LaunchedEffect(Unit) {
-        if (autoStart && !uiState.isListening) {
+        if (autoStart && \!uiState.isListening) {
             viewModel.startListening()
         }
     }
@@ -193,10 +191,9 @@ fun ReceiverStatusCard(
                 Text("같은 WiFi에 연결된 폰에서 자동으로 탐색됩니다", color = TextSecondary, fontSize = 11.sp)
             }
 
-            // bore 터널 상태 표시 (수신 중일 때)
             if (isRunning && boreTunnelStatus.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                val isBoreConnected = boreTunnelPort != null
+                val isBoreConnected = boreTunnelPort \!= null
                 val isErrorState = boreTunnelStatus.startsWith("오류")
                 val boreColor = when {
                     isBoreConnected -> SuccessGreen
@@ -241,7 +238,6 @@ fun ReceiverStatusCard(
 
             Spacer(Modifier.height(20.dp))
 
-            // 수신 시작/중지 버튼
             Button(
                 onClick  = if (isRunning) onStop else onStart,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -266,7 +262,6 @@ fun ReceiverStatusCard(
 
             Spacer(Modifier.height(16.dp))
 
-            // ✅ 부팅 시 수신 자동 시작 토글
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -333,4 +328,77 @@ fun StorageCard(receivedCount: Int, receivedSizeText: String) {
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(CardBorder))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(receivedSizeText, color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                T
+                Text("수신된 용량", color = TextSecondary, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun ReceivedFileItem(file: ReceivedFileUi) {
+    val isVideo = file.fileName.lowercase().let {
+        it.endsWith(".mp4") || it.endsWith(".mov") || it.endsWith(".avi") || it.endsWith(".mkv")
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(CardBg)
+            .border(0.5.dp, CardBorder, RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(PrimaryBlue.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isVideo) Icons.Default.VideoFile else Icons.Default.Image,
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text       = file.fileName,
+                color      = TextPrimary,
+                fontSize   = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines   = 1
+            )
+            Text("${file.sizeText} · ${file.timeText}", color = TextSecondary, fontSize = 11.sp)
+        }
+
+        Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
+    }
+}
+
+private fun parseSizeText(sizeText: String): Long {
+    return try {
+        val parts = sizeText.trim().split(" ")
+        val value = parts[0].toDouble()
+        when (parts.getOrNull(1)?.uppercase()) {
+            "GB" -> (value * 1_073_741_824).toLong()
+            "MB" -> (value * 1_048_576).toLong()
+            "KB" -> (value * 1_024).toLong()
+            else -> value.toLong()
+        }
+    } catch (e: Exception) { 0L }
+}
+
+private fun formatBytes(bytes: Long): String {
+    return when {
+        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
+        bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
+        bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
+        else                   -> "$bytes B"
+    }
+}

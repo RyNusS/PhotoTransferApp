@@ -41,7 +41,6 @@ data class ReceiverUiState(
     val receivedFiles:    List<ReceivedFileUi> = emptyList(),
     val statusMessage:    String  = "수신 대기 중...",
     val autoStartOnBoot:  Boolean = false,
-    // bore 터널 상태
     val boreTunnelStatus: String  = "",
     val boreTunnelPort:   Int?    = null
 )
@@ -51,7 +50,7 @@ class ReceiverViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: TransferRepository,
     private val receiverStateHolder: ReceiverStateHolder,
-    private val boreTunnelManager: BoreTunnelManager    // ✅ bore 터널 관리
+    private val boreTunnelManager: BoreTunnelManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReceiverUiState())
@@ -75,7 +74,6 @@ class ReceiverViewModel @Inject constructor(
                 }
         }
 
-        // bore 상태 변화를 UI에 반영
         viewModelScope.launch {
             boreTunnelManager.state.collectLatest { state ->
                 val (statusText, port) = when (state) {
@@ -92,7 +90,6 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    // ── 부팅 자동 시작 토글 ────────────────────────────────────────────
     fun toggleAutoStartOnBoot(enabled: Boolean) {
         viewModelScope.launch {
             context.dataStore.edit { prefs ->
@@ -102,7 +99,6 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    // ── 수신 시작 ──────────────────────────────────────────────────────
     fun startListening() {
         if (_uiState.value.isListening) return
 
@@ -113,11 +109,10 @@ class ReceiverViewModel @Inject constructor(
             )
             receiverStateHolder.setReceiving(true)
 
-            // ✅ bore 터널 자동 시작 (백그라운드, 실패해도 로컬 서버는 계속 동작)
             launch { boreTunnelManager.start() }
 
             withContext(Dispatchers.IO) {
-                if (!saveDir.exists()) saveDir.mkdirs()
+                if (\!saveDir.exists()) saveDir.mkdirs()
 
                 server = TransferServer(
                     saveDirectory  = saveDir,
@@ -165,7 +160,6 @@ class ReceiverViewModel @Inject constructor(
         }
     }
 
-    // ── 수신 중지 ──────────────────────────────────────────────────────
     fun stopListening() {
         viewModelScope.launch(Dispatchers.IO) {
             server?.stop()
@@ -193,7 +187,7 @@ class ReceiverViewModel @Inject constructor(
                 .toList()
                 .flatMap { it.inetAddresses.toList() }
                 .firstOrNull {
-                    !it.isLoopbackAddress &&
+                    \!it.isLoopbackAddress &&
                     it is java.net.Inet4Address &&
                     it.hostAddress?.startsWith("192.168") == true
                 }
@@ -204,4 +198,8 @@ class ReceiverViewModel @Inject constructor(
     private fun formatSize(bytes: Long): String {
         return when {
             bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-            by
+            bytes >= 1_024     -> "%.1f KB".format(bytes / 1_024.0)
+            else               -> "$bytes B"
+        }
+    }
+}
