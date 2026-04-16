@@ -80,7 +80,9 @@ data class SettingsUiState(
     // 원격 연결 (Cloudflare Tunnel)
     val useRemoteMode:        Boolean = false,
     val remoteHost:           String  = "",    // 수신 측의 trycloudflare.com URL
-    val remoteError:          String? = null   // URL 형식 오류 메시지
+    val remoteError:          String? = null,  // URL 형식 오류 메시지
+    val isRemoteScanning:     Boolean = false,  // 원격 기기 연결 확인 중
+    val remoteFoundAddress:   String  = ""       // 확인된 cloudflared URL
 ) {
     val syncIntervalText: String get() = syncInterval.label
     // AM/PM 12시간 표시
@@ -355,6 +357,40 @@ class SettingsViewModel @Inject constructor(
                 result.map { it.copy(itemCount = countMap[it.path] ?: 0) }.sortedBy { it.name }
             }
             _uiState.value = _uiState.value.copy(availableFolders = folders)
+        }
+    }
+
+    fun scanForRemoteDevice() {
+        val url = _uiState.value.remoteHost.trim()
+        if (url.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                remoteError = "Cloudflare URL을 먼저 입력하세요\n(수신 기기 수신 화면에서 복사)"
+            )
+            return
+        }
+        _uiState.value = _uiState.value.copy(isRemoteScanning = true, remoteError = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val conn = (java.net.URL(url).openConnection()
+                        as java.net.HttpURLConnection).apply {
+                    requestMethod  = "GET"
+                    connectTimeout = 8_000
+                    readTimeout    = 5_000
+                }
+                try { conn.connect() } catch (ignored: Exception) { /* 연결만 확인 */ }
+                conn.disconnect()
+                _uiState.value = _uiState.value.copy(
+                    isRemoteScanning   = false,
+                    remoteFoundAddress = url,
+                    remoteError        = null
+                )
+                save(Keys.REMOTE_HOST, url)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isRemoteScanning = false,
+                    remoteError      = "연결 실패. Pixel 수신 모드 확인 후 다시 시도하세요."
+                )
+            }
         }
     }
 

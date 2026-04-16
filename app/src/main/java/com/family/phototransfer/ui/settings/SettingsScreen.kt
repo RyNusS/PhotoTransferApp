@@ -490,7 +490,27 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             Spacer(Modifier.height(10.dp))
                         }
 
-                        // 수신기기 자동연결 버튼
+                        // Cloudflare URL 입력
+                        OutlinedTextField(
+                            value         = uiState.remoteHost,
+                            onValueChange = { viewModel.setRemoteHost(it) },
+                            label         = { Text("수신기기 URL (Cloudflare Tunnel)") },
+                            placeholder   = { Text("https://xxxx.trycloudflare.com", color = TextSecondary) },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            colors        = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor   = PrimaryBlue,
+                                unfocusedBorderColor = CardBorder,
+                                focusedTextColor     = TextPrimary,
+                                unfocusedTextColor   = TextPrimary,
+                                cursorColor          = PrimaryBlue,
+                                focusedLabelColor    = PrimaryBlue,
+                                unfocusedLabelColor  = TextSecondary
+                            )
+                        )
+                        Spacer(Modifier.height(8.dp))
+
+                        // 연결 확인 버튼
                         Button(
                             onClick  = { viewModel.scanForRemoteDevice() },
                             enabled  = !uiState.isRemoteScanning,
@@ -504,12 +524,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             if (uiState.isRemoteScanning) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                                 Spacer(Modifier.width(8.dp))
-                                Text("수신 기기 탐색 중...", color = Color.White, fontSize = 14.sp)
+                                Text("연결 확인 중...", color = Color.White, fontSize = 14.sp)
                             } else {
                                 Icon(Icons.Default.Wifi, null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = if (uiState.remoteFoundAddress.isNotEmpty()) "다시 탐색" else "수신기기 자동연결",
+                                    text = if (uiState.remoteFoundAddress.isNotEmpty()) "다시 확인" else "연결 확인",
                                     color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -528,7 +548,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             Icon(Icons.Default.Info, null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "픽셀 폰에서 수신 모드를 시작하면\n버튼을 눌러 자동으로 연결됩니다",
+                                text = "픽셀 폰 수신 화면에서 Cloudflare URL을 복사해\n위에 붙여넣고 [연결 확인]을 눌러주세요",
                                 color = PrimaryBlue.copy(alpha = 0.85f),
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp
