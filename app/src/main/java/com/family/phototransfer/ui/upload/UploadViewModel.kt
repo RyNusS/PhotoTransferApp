@@ -7,14 +7,11 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.family.phototransfer.network.BORE_CANDIDATE_PORTS
 import com.family.phototransfer.network.DiscoveredDevice
 import com.family.phototransfer.network.ReceiverStateHolder
 import com.family.phototransfer.network.TransferEvent
 import com.family.phototransfer.network.TransferManager
 import com.family.phototransfer.network.WifiDeviceScanner
-import java.net.InetSocketAddress
-import java.net.Socket
 import com.family.phototransfer.ui.settings.dataStore
 import com.family.phototransfer.util.NotificationHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -231,39 +228,26 @@ class UploadViewModel @Inject constructor(
             val remoteHost    = prefs[stringPreferencesKey("remote_host")]      ?: ""
 
             if (useRemoteMode) {
-                // 원격 모드: bore.pub 후보 포트 10개를 순차 탐색
-                _uiState.value = _uiState.value.copy(
-                    isScanning        = true,
-                    discoveredDevices = emptyList(),
-                    selectedDevice    = null,
-                    errorMessage      = null
-                )
-
-                val activeDevice = withContext(Dispatchers.IO) {
-                    BORE_CANDIDATE_PORTS.firstOrNull { port ->
-                        probeBorePort(port)
-                    }?.let { port ->
-                        DiscoveredDevice(
-                            ipAddress  = "bore.pub:$port",
-                            deviceName = "원격 연결 (bore.pub:$port)"
-                        )
-                    }
-                }
-
-                if (activeDevice != null) {
-                    _uiState.value = _uiState.value.copy(
-                        isScanning        = false,
-                        discoveredDevices = listOf(activeDevice),
-                        selectedDevice    = activeDevice,
-                        cloudSyncActive   = true,
-                        errorMessage      = null
-                    )
-                } else {
+                // 원격 모드: 설정에 저장된 Cloudflare 터널 URL 사용
+                val url = remoteHost.trim()
+                if (url.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         isScanning   = false,
-                        errorMessage = "활성화된 bore 터널을 찾을 수 없습니다. 수신 측에서 수신 모드를 먼저 시작해주세요."
+                        errorMessage = "원격 연결 URL이 설정되지 않았습니다. 수신 측의 Cloudflare 터널 URL을 설정 탭에서 입력해주세요."
                     )
+                    return@launch
                 }
+                val device = DiscoveredDevice(
+                    ipAddress  = url,
+                    deviceName = "원격 연결 (Cloudflare Tunnel)"
+                )
+                _uiState.value = _uiState.value.copy(
+                    isScanning        = false,
+                    discoveredDevices = listOf(device),
+                    selectedDevice    = device,
+                    cloudSyncActive   = true,
+                    errorMessage      = null
+                )
                 return@launch
             }
 
@@ -337,18 +321,6 @@ class UploadViewModel @Inject constructor(
 
     fun dismissUploadResult() {
         _uiState.value = _uiState.value.copy(isUploadDone = false)
-    }
-
-    // ── bore.pub:PORT TCP 연결 가능 여부 확인 (2초 타임아웃) ──────────
-    private fun probeBorePort(port: Int, timeoutMs: Int = 2_000): Boolean {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress("bore.pub", port), timeoutMs)
-                true
-            }
-        } catch (e: Exception) {
-            false
-        }
     }
 
     private fun formatDuration(ms: Long): String {

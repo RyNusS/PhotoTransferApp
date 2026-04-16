@@ -6,8 +6,10 @@ import kotlinx.coroutines.withContext
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.InputStream
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.URL
 
 private const val TAG = "TransferClient"
 
@@ -24,11 +26,6 @@ sealed class TransferResult {
 
 class TransferClient {
 
-    /**
-     * InputStream을 스트리밍으로 전송
-     * 해시 계산은 TransferManager에서 임시파일로 미리 처리함
-     * → 이 함수는 순수하게 전송만 담당
-     */
     suspend fun sendStream(
         inputStream:  InputStream,
         fileSize:     Long,
@@ -39,9 +36,17 @@ class TransferClient {
     ): TransferResult = withContext(Dispatchers.IO) {
 
         val isVideo = isVideoFileName(fileName)
+
+        // HTTP 모드: cloudflared URL (https:// 또는 http://)
+        if (receiverIp.startsWith("http://") || receiverIp.startsWith("https://")) {
+            return@withContext sendViaHttp(
+                receiverIp.trimEnd('/'), inputStream, fileSize, fileName, sourceDevice, isVideo, onProgress
+            )
+        }
+
+        // raw TCP 모드: 기존 로컬 WiFi 전송
         val transferTimeout = if (isVideo) VIDEO_TRANSFER_TIMEOUT_MS else IMAGE_TRANSFER_TIMEOUT_MS
 
-        // host:port 형식 파싱 (원격 연결 시 bore.pub:52643 등)
         val (host, port) = if (receiverIp.contains(":")) {
             val parts = receiverIp.split(":")
             parts[0] to (parts[1].toIntOrNull() ?: TRANSFER_PORT)
@@ -49,7 +54,7 @@ class TransferClient {
             receiverIp to TRANSFER_PORT
         }
 
-        Log.d(TAG, "전송 시작: $fileName ($fileSize bytes, video=$isVideo) → $host:$port")
+        Log.d(TAG, "TCP 전송: $fileName ($fileSize bytes) → $host:$port")
 
         try {
             Socket().use { socket ->
@@ -59,14 +64,12 @@ class TransferClient {
                 val output = DataOutputStream(socket.getOutputStream().buffered(CHUNK_SIZE))
                 val input  = DataInputStream(socket.getInputStream())
 
-                // 1) 메타데이터 전송
                 output.writeUTF(fileName)
                 output.writeLong(fileSize)
-                output.writeUTF("")           // 해시 자리 (수신측에서 사용 안 함)
+                output.writeUTF("")           // 해시 자리
                 output.writeUTF(sourceDevice)
                 output.flush()
 
-                // 2) 파일 스트리밍 전송
                 val buffer    = ByteArray(CHUNK_SIZE)
                 var totalSent = 0L
                 var bytesRead: Int
@@ -78,9 +81,8 @@ class TransferClient {
                 }
                 output.flush()
 
-                Log.d(TAG, "전송 완료: $fileName ($totalSent bytes)")
+                Log.d(TAG, "TCP 전송 완료: $fileName ($totalSent bytes)")
 
-                // 3) 서버 응답 대기
                 val response = input.readUTF()
                 Log.d(TAG, "서버 응답: $response ($fileName)")
 
@@ -91,23 +93,74 @@ class TransferClient {
                 }
             }
         } catch (e: java.net.ConnectException) {
-            Log.e(TAG, "연결 실패: ${e.message}")
+            Log.e(TAG, "TCP 연결 실패: ${e.message}")
             TransferResult.Failed(fileName, "수신 기기에 연결할 수 없습니다.")
         } catch (e: java.net.SocketTimeoutException) {
-            Log.e(TAG, "타임아웃 ($fileName, video=$isVideo): ${e.message}")
+            Log.e(TAG, "TCP 타임아웃 ($fileName, video=$isVideo): ${e.message}")
             val hint = if (isVideo) "동영상이 너무 크거나 네트워크가 느립니다." else "네트워크를 확인하세요."
             TransferResult.Failed(fileName, "전송 시간 초과. $hint")
         } catch (e: Exception) {
-            Log.e(TAG, "전송 오류 ($fileName): ${e.javaClass.simpleName} - ${e.message}")
+            Log.e(TAG, "TCP 전송 오류 ($fileName): ${e.javaClass.simpleName} - ${e.message}")
             TransferResult.Failed(fileName, "${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
-    private fun isVideoFileName(fileName: String): Boolean {
-        val lower = fileName.lowercase()
-        return lower.endsWith(".mp4") || lower.endsWith(".mov") ||
-               lower.endsWith(".avi") || lower.endsWith(".mkv") ||
-               lower.endsWith(".3gp") || lower.endsWith(".wmv") ||
-               lower.endsWith(".m4v") || lower.endsWith(".ts")
+    // ── HTTP 전송 (cloudflared Quick Tunnel 경유) ─────────────────────
+    private fun sendViaHttp(
+        baseUrl:      String,
+        inputStream:  InputStream,
+        fileSize:     Long,
+        fileName:     String,
+        sourceDevice: String,
+        isVideo:      Boolean,
+        onProgress:   (Float) -> Unit
+    ): TransferResult {
+        val url = "$baseUrl/transfer"
+        Log.d(TAG, "HTTP 전송: $fileName → $url")
+        return try {
+            val conn = (java.net.URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = if (isVideo) VIDEO_TRANSFER_TIMEOUT_MS else IMAGE_TRANSFER_TIMEOUT_MS
+                setRequestProperty("X-Filename",   fileName)
+                setRequestProperty("X-Filesize",   fileSize.toString())
+                setRequestProperty("X-Device",     sourceDevice)
+                setRequestProperty("Content-Type", "application/octet-stream")
+                setFixedLengthStreamingMode(fileSize)
+            }
+            conn.connect()
+            conn.outputStream.use { out ->
+                val buffer    = ByteArray(CHUNK_SIZE)
+                var totalSent = 0L
+                var bytesRead: Int
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    out.write(buffer, 0, bytesRead)
+                    totalSent += bytesRead
+                    if (fileSize > 0) onProgress(totalSent.toFloat() / fileSize)
+                }
+                out.flush()
+            }
+            val responseCode = conn.responseCode
+            val body = conn.inputStream.bufferedReader().readText().trim()
+            conn.disconnect()
+            if (responseCode == 200 && body == "OK") TransferResult.Success(fileName, fileSize)
+            else TransferResult.Failed(fileName, "HTTP 서버 오류: $responseCode $body")
+        } catch (e: java.net.ConnectException) {
+            Log.e(TAG, "HTTP 연결 실패: ${e.message}")
+            TransferResult.Failed(fileName, "수신 기기에 연결할 수 없습니다.")
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.e(TAG, "HTTP 타임아웃: ${e.message}")
+            TransferResult.Failed(fileName, "전송 시간 초과.")
+        } catch (e: Exception) {
+            Log.e(TAG, "HTTP 전송 오류 ($fileName): ${e.javaClass.simpleName} - ${e.message}")
+            TransferResult.Failed(fileName, "${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun isVideoFileName(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".avi") ||
+               lower.endsWith(".mkv") || lower.endsWith(".3gp") || lower.endsWith(".m4v")
     }
 }

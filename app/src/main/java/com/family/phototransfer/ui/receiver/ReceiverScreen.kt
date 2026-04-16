@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -58,8 +60,8 @@ fun ReceiverScreen(
                 myIp              = uiState.myIpAddress,
                 statusMessage     = uiState.statusMessage,
                 autoStartOnBoot   = uiState.autoStartOnBoot,
-                boreTunnelStatus  = uiState.boreTunnelStatus,
-                boreTunnelPort    = uiState.boreTunnelPort,
+                tunnelStatus      = uiState.tunnelStatus,
+                tunnelUrl         = uiState.tunnelUrl,
                 onStart           = { viewModel.startListening() },
                 onStop            = { viewModel.stopListening() },
                 onToggleAutoStart = { viewModel.toggleAutoStartOnBoot(it) }
@@ -129,12 +131,13 @@ fun ReceiverStatusCard(
     myIp:              String,
     statusMessage:     String,
     autoStartOnBoot:   Boolean,
-    boreTunnelStatus:  String  = "",
-    boreTunnelPort:    Int?    = null,
+    tunnelStatus:      String  = "",
+    tunnelUrl:         String? = null,
     onStart:           () -> Unit,
     onStop:            () -> Unit,
     onToggleAutoStart: (Boolean) -> Unit
 ) {
+    val clipboardManager = LocalClipboardManager.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(16.dp),
@@ -191,45 +194,93 @@ fun ReceiverStatusCard(
                 Text("같은 WiFi에 연결된 폰에서 자동으로 탐색됩니다", color = TextSecondary, fontSize = 11.sp)
             }
 
-            if (isRunning && boreTunnelStatus.isNotEmpty()) {
+            if (isRunning && tunnelStatus.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                val isBoreConnected = boreTunnelPort != null
-                val isErrorState = boreTunnelStatus.startsWith("오류")
-                val boreColor = when {
-                    isBoreConnected -> SuccessGreen
-                    isErrorState    -> Color(0xFFFF4444)
-                    else            -> WarningOrange
+                val isConnected  = tunnelUrl != null
+                val isErrorState = tunnelStatus.startsWith("오류")
+                val tunnelColor  = when {
+                    isConnected  -> SuccessGreen
+                    isErrorState -> Color(0xFFFF4444)
+                    else         -> WarningOrange
                 }
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(boreColor.copy(alpha = 0.08f))
-                        .border(0.5.dp, boreColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(tunnelColor.copy(alpha = 0.08f))
+                        .border(0.5.dp, tunnelColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isBoreConnected) Icons.Default.Cloud
-                                      else if (isErrorState) Icons.Default.CloudOff
-                                      else Icons.Default.CloudSync,
-                        contentDescription = null,
-                        tint = boreColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = when {
+                                isConnected  -> Icons.Default.Cloud
+                                isErrorState -> Icons.Default.CloudOff
+                                else         -> Icons.Default.CloudSync
+                            },
+                            contentDescription = null,
+                            tint = tunnelColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = if (isBoreConnected) "원격 터널 연결됨"
-                                   else if (isErrorState) "원격 터널 오류"
-                                   else "원격 터널 연결 중...",
-                            color = boreColor,
+                            text = when {
+                                isConnected  -> "Cloudflare 터널 연결됨"
+                                isErrorState -> "Cloudflare 터널 오류"
+                                else         -> "Cloudflare 터널 연결 중..."
+                            },
+                            color = tunnelColor,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                    if (tunnelUrl != null) {
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            text = boreTunnelStatus,
-                            color = boreColor.copy(alpha = 0.8f),
+                            text = "Samsung 폰의 설정에서 아래 URL을 입력하세요:",
+                            color = tunnelColor.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF0D1117))
+                                .border(0.5.dp, tunnelColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = tunnelUrl,
+                                color = SuccessGreen,
+                                fontSize = 11.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { clipboardManager.setText(AnnotatedString(tunnelUrl)) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "URL 복사",
+                                    tint = tunnelColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    } else if (!isErrorState) {
+                        Text(
+                            text = tunnelStatus,
+                            color = tunnelColor.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                    } else {
+                        Text(
+                            text = tunnelStatus,
+                            color = tunnelColor.copy(alpha = 0.8f),
                             fontSize = 11.sp
                         )
                     }
@@ -276,24 +327,20 @@ fun ReceiverStatusCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.RestartAlt,
+                    imageVector = Icons.Default.Autorenew,
                     contentDescription = null,
                     tint = if (autoStartOnBoot) PrimaryBlue else TextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "앱 시작 시 수신 자동 시작",
-                        color = if (autoStartOnBoot) TextPrimary else TextSecondary,
+                        text = "자동 시작",
                         fontSize = 13.sp,
+                        color = if (autoStartOnBoot) PrimaryBlue else TextPrimary,
                         fontWeight = FontWeight.Medium
                     )
-                    Text(
-                        "폰 재시작 후 자동으로 수신 대기",
-                        color = TextSecondary,
-                        fontSize = 11.sp
-                    )
+                    Text("앱 시작 시 자동으로 수신 시작", fontSize = 11.sp, color = TextSecondary)
                 }
                 Switch(
                     checked = autoStartOnBoot,
@@ -301,7 +348,6 @@ fun ReceiverStatusCard(
                     colors = SwitchDefaults.colors(
                         checkedThumbColor   = Color.White,
                         checkedTrackColor   = PrimaryBlue,
-                        uncheckedThumbColor = TextSecondary,
                         uncheckedTrackColor = CardBorder
                     )
                 )
@@ -311,24 +357,28 @@ fun ReceiverStatusCard(
 }
 
 @Composable
-fun StorageCard(receivedCount: Int, receivedSizeText: String) {
+fun StorageCard(
+    receivedCount:    Int,
+    receivedSizeText: String
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape    = RoundedCornerShape(12.dp),
+        shape    = RoundedCornerShape(16.dp),
         colors   = CardDefaults.cardColors(containerColor = CardBg)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceAround
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("$receivedCount", color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("수신된 파일", color = TextSecondary, fontSize = 11.sp)
+                Text("수신 파일", color = TextSecondary, fontSize = 11.sp)
             }
-            Box(modifier = Modifier.width(1.dp).height(40.dp).background(CardBorder))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(receivedSizeText, color = SuccessGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("수신된 용량", color = TextSecondary, fontSize = 11.sp)
+                Text(receivedSizeText, color = PrimaryBlue, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("총 용량", color = TextSecondary, fontSize = 11.sp)
             }
         }
     }
@@ -336,69 +386,53 @@ fun StorageCard(receivedCount: Int, receivedSizeText: String) {
 
 @Composable
 fun ReceivedFileItem(file: ReceivedFileUi) {
-    val isVideo = file.fileName.lowercase().let {
-        it.endsWith(".mp4") || it.endsWith(".mov") || it.endsWith(".avi") || it.endsWith(".mkv")
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(CardBg)
             .border(0.5.dp, CardBorder, RoundedCornerShape(10.dp))
-            .padding(12.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(PrimaryBlue.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (isVideo) Icons.Default.VideoFile else Icons.Default.Image,
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
+        Icon(
+            imageVector = Icons.Default.Image,
+            contentDescription = null,
+            tint = PrimaryBlue,
+            modifier = Modifier.size(32.dp)
+        )
         Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             Text(
-                text       = file.fileName,
-                color      = TextPrimary,
-                fontSize   = 13.sp,
+                text = file.fileName,
+                color = TextPrimary,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                maxLines   = 1
+                maxLines = 1
             )
-            Text("${file.sizeText} · ${file.timeText}", color = TextSecondary, fontSize = 11.sp)
+            Text(
+                text = "${file.sizeText} • ${file.timeText}",
+                color = TextSecondary,
+                fontSize = 11.sp
+            )
         }
-
-        Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
     }
 }
 
 private fun parseSizeText(sizeText: String): Long {
     return try {
-        val parts = sizeText.trim().split(" ")
-        val value = parts[0].toDouble()
-        when (parts.getOrNull(1)?.uppercase()) {
-            "GB" -> (value * 1_073_741_824).toLong()
-            "MB" -> (value * 1_048_576).toLong()
-            "KB" -> (value * 1_024).toLong()
-            else -> value.toLong()
+        when {
+            sizeText.endsWith(" MB") -> (sizeText.removeSuffix(" MB").toDouble() * 1_048_576).toLong()
+            sizeText.endsWith(" KB") -> (sizeText.removeSuffix(" KB").toDouble() * 1_024).toLong()
+            sizeText.endsWith(" B")  -> sizeText.removeSuffix(" B").toLong()
+            else -> 0L
         }
     } catch (e: Exception) { 0L }
 }
 
-private fun formatBytes(bytes: Long): String {
-    return when {
-        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-        bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
-        bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
-        else                   -> "$bytes B"
-    }
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
+    bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
+    else                   -> "$bytes B"
 }

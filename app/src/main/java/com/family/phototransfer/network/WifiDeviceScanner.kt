@@ -16,9 +16,10 @@ data class DiscoveredDevice(
     val port: Int = TRANSFER_PORT
 )
 
-const val TRANSFER_PORT = 9876          // 파일 전송용 포트
-const val DISCOVERY_PORT = 9877         // 기기 탐색용 포트
-const val SOCKET_TIMEOUT_MS = 300       // 탐색 타임아웃 (ms)
+const val TRANSFER_PORT      = 9876      // 파일 전송용 포트 (로컬 WiFi raw TCP)
+const val DISCOVERY_PORT     = 9877      // 기기 탐색용 포트
+const val HTTP_TRANSFER_PORT = 9875      // HTTP 전송용 포트 (cloudflared 터널)
+const val SOCKET_TIMEOUT_MS  = 300       // 탐색 타임아웃 (ms)
 const val TRANSFER_TIMEOUT_MS = 30_000  // 전송 타임아웃 (ms)
 
 class WifiDeviceScanner(private val context: Context) {
@@ -98,7 +99,6 @@ class WifiDeviceScanner(private val context: Context) {
         return intToIp(wifiInfo.ipAddress)
     }
 
-    // int 형태의 IP를 문자열로 변환 (Android WiFi API는 int로 반환)
     private fun intToIp(ip: Int): String {
         return "${ip and 0xFF}.${ip shr 8 and 0xFF}.${ip shr 16 and 0xFF}.${ip shr 24 and 0xFF}"
     }

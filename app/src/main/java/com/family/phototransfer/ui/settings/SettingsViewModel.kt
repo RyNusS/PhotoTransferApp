@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.family.phototransfer.network.BORE_CANDIDATE_PORTS
 import com.family.phototransfer.network.WifiDeviceScanner
 import com.family.phototransfer.scheduler.AutoSyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -78,12 +77,10 @@ data class SettingsUiState(
     val isScanning:        Boolean              = false,
     val discoveredDevices: List<com.family.phototransfer.network.DiscoveredDevice> = emptyList(),
     val scanError:         String?              = null,
-    // 원격 연결 (bore.pub)
+    // 원격 연결 (Cloudflare Tunnel)
     val useRemoteMode:        Boolean = false,
-    val remoteHost:           String  = "",
-    val isRemoteScanning:     Boolean = false,    // bore 포트 탐색 중
-    val remoteFoundAddress:   String  = "",       // 발견된 bore.pub:PORT
-    val remoteError:          String? = null      // 원격 탐색 오류 메시지
+    val remoteHost:           String  = "",    // 수신 측의 trycloudflare.com URL
+    val remoteError:          String? = null   // URL 형식 오류 메시지
 ) {
     val syncIntervalText: String get() = syncInterval.label
     // AM/PM 12시간 표시
@@ -230,59 +227,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { save(Keys.NOTIFY_ON_RECEIVE, enabled) }
     }
 
-    // ── 원격 연결 (bore.pub) ──────────────────────────────────
+    // ── 원격 연결 (Cloudflare Tunnel) ────────────────────────
     fun setUseRemoteMode(enabled: Boolean) {
         viewModelScope.launch {
             save(Keys.USE_REMOTE_MODE, enabled)
-            // 원격 모드 전환 시 이전 탐색 결과 초기화
-            _uiState.value = _uiState.value.copy(
-                remoteFoundAddress = "",
-                remoteError        = null
-            )
+            _uiState.value = _uiState.value.copy(remoteError = null)
         }
     }
 
     fun setRemoteHost(host: String) {
-        viewModelScope.launch { save(Keys.REMOTE_HOST, host.trim()) }
-    }
-
-    /** 원격 모드: bore.pub 후보 포트 10개를 순차 탐색해 수신 기기를 자동 연결 */
-    fun scanForRemoteDevice() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isRemoteScanning   = true,
-                remoteFoundAddress = "",
-                remoteError        = null
-            )
-
-            val foundPort = withContext(Dispatchers.IO) {
-                BORE_CANDIDATE_PORTS.firstOrNull { port -> probeBorePort(port) }
+            val url = host.trim()
+            // 간단한 형식 검증
+            val error = when {
+                url.isNotEmpty() && !url.startsWith("https://") && !url.startsWith("http://") ->
+                    "URL은 https:// 로 시작해야 합니다"
+                else -> null
             }
-
-            if (foundPort != null) {
-                val address = "bore.pub:$foundPort"
-                save(Keys.REMOTE_HOST, address)          // AutoSyncWorker용 저장
-                _uiState.value = _uiState.value.copy(
-                    isRemoteScanning   = false,
-                    remoteFoundAddress = address
-                )
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isRemoteScanning = false,
-                    remoteError      = "수신 기기를 찾을 수 없습니다. 픽셀 폰에서 수신 모드를 먼저 시작해주세요."
-                )
-            }
-        }
-    }
-
-    private fun probeBorePort(port: Int, timeoutMs: Int = 2_000): Boolean {
-        return try {
-            java.net.Socket().use { socket ->
-                socket.connect(java.net.InetSocketAddress("bore.pub", port), timeoutMs)
-                true
-            }
-        } catch (e: Exception) {
-            false
+            _uiState.value = _uiState.value.copy(remoteError = error)
+            if (error == null) save(Keys.REMOTE_HOST, url)
         }
     }
 

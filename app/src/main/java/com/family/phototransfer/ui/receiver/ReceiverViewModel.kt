@@ -7,8 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.family.phototransfer.data.repository.TransferRepository
-import com.family.phototransfer.network.BoreTunnelManager
-import com.family.phototransfer.network.BoreTunnelState
+import com.family.phototransfer.network.CloudflaredManager
+import com.family.phototransfer.network.CloudflaredState
 import com.family.phototransfer.network.ReceivedFile
 import com.family.phototransfer.network.ReceiverStateHolder
 import com.family.phototransfer.network.TransferServer
@@ -36,13 +36,13 @@ data class ReceivedFileUi(
 )
 
 data class ReceiverUiState(
-    val isListening:      Boolean = false,
-    val myIpAddress:      String  = "",
-    val receivedFiles:    List<ReceivedFileUi> = emptyList(),
-    val statusMessage:    String  = "수신 대기 중...",
-    val autoStartOnBoot:  Boolean = false,
-    val boreTunnelStatus: String  = "",
-    val boreTunnelPort:   Int?    = null
+    val isListening:   Boolean = false,
+    val myIpAddress:   String  = "",
+    val receivedFiles: List<ReceivedFileUi> = emptyList(),
+    val statusMessage: String  = "수신 대기 중...",
+    val autoStartOnBoot: Boolean = false,
+    val tunnelStatus:  String  = "",    // cloudflared 상태 메시지
+    val tunnelUrl:     String? = null   // 연결된 trycloudflare.com URL
 )
 
 @HiltViewModel
@@ -50,7 +50,7 @@ class ReceiverViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: TransferRepository,
     private val receiverStateHolder: ReceiverStateHolder,
-    private val boreTunnelManager: BoreTunnelManager
+    private val cloudflaredManager: CloudflaredManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReceiverUiState())
@@ -75,16 +75,16 @@ class ReceiverViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            boreTunnelManager.state.collectLatest { state ->
-                val (statusText, port) = when (state) {
-                    is BoreTunnelState.Idle        -> "" to null
-                    is BoreTunnelState.Connecting  -> "터널 연결 중..." to null
-                    is BoreTunnelState.Connected   -> "bore.pub:${state.port}" to state.port
-                    is BoreTunnelState.Error       -> "오류: ${state.message}" to null
+            cloudflaredManager.state.collectLatest { state ->
+                val (statusText, url) = when (state) {
+                    is CloudflaredState.Idle       -> "" to null
+                    is CloudflaredState.Connecting -> "터널 연결 중..." to null
+                    is CloudflaredState.Connected  -> "연결됨" to state.url
+                    is CloudflaredState.Error      -> "오류: ${state.message}" to null
                 }
                 _uiState.value = _uiState.value.copy(
-                    boreTunnelStatus = statusText,
-                    boreTunnelPort   = port
+                    tunnelStatus = statusText,
+                    tunnelUrl    = url
                 )
             }
         }
@@ -105,11 +105,11 @@ class ReceiverViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isListening   = true,
-                statusMessage = "수신 대기 중... (포트 9876)"
+                statusMessage = "수신 대기 중... (포트 9876/9875)"
             )
             receiverStateHolder.setReceiving(true)
 
-            launch { boreTunnelManager.start() }
+            launch { cloudflaredManager.start() }
 
             withContext(Dispatchers.IO) {
                 if (!saveDir.exists()) saveDir.mkdirs()
@@ -165,20 +165,20 @@ class ReceiverViewModel @Inject constructor(
             server?.stop()
             server = null
         }
-        boreTunnelManager.stop()
+        cloudflaredManager.stop()
         receiverStateHolder.setReceiving(false)
         _uiState.value = _uiState.value.copy(
-            isListening      = false,
-            statusMessage    = "수신 중지됨",
-            boreTunnelStatus = "",
-            boreTunnelPort   = null
+            isListening   = false,
+            statusMessage = "수신 중지됨",
+            tunnelStatus  = "",
+            tunnelUrl     = null
         )
     }
 
     override fun onCleared() {
         super.onCleared()
         server?.stop()
-        boreTunnelManager.stop()
+        cloudflaredManager.stop()
     }
 
     private fun getLocalIpAddress(): String {
