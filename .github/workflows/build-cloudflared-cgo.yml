@@ -1,6 +1,5 @@
 name: Build cloudflared Android ARM64 (CGO)
 
-# 수동 트리거 전용 — master 푸시 때마다 실행하지 않음
 on:
   workflow_dispatch:
     inputs:
@@ -8,9 +7,13 @@ on:
         description: 'cloudflared 버전 태그 (예: 2025.4.0) 또는 "latest"'
         required: false
         default: 'latest'
+  push:
+    branches: [ master ]
+    paths:
+      - 'trigger-cloudflared-build'   # 이 파일 변경 시에만 빌드 트리거
 
 permissions:
-  contents: write   # 바이너리 커밋 푸시 권한
+  contents: write
 
 jobs:
   build-cloudflared:
@@ -23,19 +26,16 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Go 설치 ──────────────────────────────────────────────────
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      # ── Android NDK 설치 ─────────────────────────────────────────
       - name: Install Android NDK r25c
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager             "ndk;25.2.9519653" > /dev/null
           echo "NDK_PATH=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      # ── cloudflared 버전 결정 ─────────────────────────────────────
       - name: Resolve cloudflared version
         id: resolve
         run: |
@@ -48,19 +48,14 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "cloudflared 버전: $VERSION"
 
-      # ── 소스 클론 ────────────────────────────────────────────────
       - name: Clone cloudflared source
         run: |
           git clone --depth=1             --branch ${{ steps.resolve.outputs.version }}             https://github.com/cloudflare/cloudflared             /tmp/cloudflared
-          echo "소스 클론 완료: ${{ steps.resolve.outputs.version }}"
 
-      # ── CGO 빌드 ─────────────────────────────────────────────────
       - name: Build cloudflared (CGO_ENABLED=1, GOOS=android, arm64)
         run: |
           CC=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-
           cd /tmp/cloudflared
-
           CGO_ENABLED=1 \
           GOOS=android \
           GOARCH=arm64 \
@@ -73,27 +68,16 @@ jobs:
             -buildmode=pie \
             -o /tmp/libcloudflared_cgo.so \
             ./cmd/cloudflared
-
-          echo "빌드 완료"
           ls -lh /tmp/libcloudflared_cgo.so
           file /tmp/libcloudflared_cgo.so
           readelf -h /tmp/libcloudflared_cgo.so | grep -E "Machine|Type|Class|OS/ABI"
 
-      # ── 검증 ─────────────────────────────────────────────────────
-      - name: Verify binary
+      - name: Verify binary (ARM64 ELF)
         run: |
-          # ARM64 ELF 확인
-          file /tmp/libcloudflared_cgo.so | grep -q "ELF 64-bit" ||             (echo "ERROR: ARM64 ELF가 아닙니다"; exit 1)
-
-          # CGO 동적 링크 확인 (bionic 의존성)
-          readelf -d /tmp/libcloudflared_cgo.so | grep -E "NEEDED|SONAME" || true
-
-          # Go build info 확인
+          file /tmp/libcloudflared_cgo.so | grep -q "ELF 64-bit" ||             (echo "ERROR: ARM64 ELF 아님"; exit 1)
+          readelf -d /tmp/libcloudflared_cgo.so | grep NEEDED || true
           go version /tmp/libcloudflared_cgo.so || true
 
-          echo "검증 완료"
-
-      # ── 기존 바이너리 교체 ────────────────────────────────────────
       - name: Replace binary in repo
         run: |
           DEST="app/src/main/jniLibs/arm64-v8a/libcloudflared.so"
@@ -102,29 +86,19 @@ jobs:
           NEW_SIZE=$(ls -lh "$DEST" | awk '{print $5}')
           echo "바이너리 교체: $OLD_SIZE -> $NEW_SIZE"
 
-      # ── 커밋 & 푸시 ──────────────────────────────────────────────
-      - name: Commit and push new binary
+      - name: Commit and push
         run: |
           git config user.name "RyNusS"
           git config user.email "doa4004@gmail.com"
-
           VERSION="${{ steps.resolve.outputs.version }}"
-          DEST="app/src/main/jniLibs/arm64-v8a/libcloudflared.so"
-
-          git add "$DEST"
-
-          # 변경사항이 없으면 스킵
+          git add app/src/main/jniLibs/arm64-v8a/libcloudflared.so
           if git diff --staged --quiet; then
-            echo "바이너리가 동일합니다. 커밋 없음."
+            echo "바이너리 동일, 커밋 없음"
             exit 0
           fi
+          git commit -m "chore: cloudflared Android arm64 CGO 빌드 교체 ($VERSION)
 
-          git commit -m "chore: cloudflared Android arm64 바이너리 교체 (CGO, $VERSION)
-
-          - CGO_ENABLED=1 빌드: bionic getaddrinfo() 사용 -> Android DNS 정상 작동
-          - GOOS=android GOARCH=arm64 (API 21+)
-          - buildmode=pie (Android PIE 요구사항 충족)
-          - DNS proxy 없이 바로 DNS 해결 가능"
-
+          - CGO_ENABLED=1: bionic getaddrinfo() -> Android DNS 정상 작동
+          - GOOS=android GOARCH=arm64 API 21+
+          - DNS 프록시 없이 바로 DNS 해결 가능"
           git push
-          echo "Push 완료"
