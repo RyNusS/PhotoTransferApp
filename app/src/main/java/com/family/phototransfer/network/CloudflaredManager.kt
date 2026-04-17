@@ -51,7 +51,10 @@ class CloudflaredManager @Inject constructor(
                 "--no-autoupdate"
             )
                 .redirectErrorStream(true)
-                .apply { environment()["HOME"] = context.filesDir.absolutePath }
+                .apply {
+                    environment()["HOME"]    = context.filesDir.absolutePath
+                    environment()["GODEBUG"] = "netdns=cgo"  // Android DNS 사용
+                }
                 .start()
 
             cfProcess = proc
