@@ -36,44 +36,53 @@ class CloudflaredManager @Inject constructor(
     private var cfProcess: Process? = null
     private var dnsProxySocket: DatagramSocket? = null
 
-    // ── DNS 프록시: [::1]:53 → 8.8.8.8:53 ────────────────────────
+    // ── DNS 프록시: [::1]:53 -> 8.8.8.8:53 ───────────────────────
     // Android에서 Go static 바이너리는 /etc/resolv.conf의 nameserver ::1을 사용하는데
     // [::1]:53 에 아무것도 없어서 DNS 실패. 여기서 직접 [::1]:53을 열어 포워딩.
     private fun startDnsProxy() {
-        Thread(Runnable {
+        Thread {
             try {
-                val sock = DatagramSocket(null)
-                sock.reuseAddress = true
-                sock.bind(InetSocketAddress(InetAddress.getByName("::1"), 53))
+                val bindAddr = InetSocketAddress(InetAddress.getByName("::1"), 53)
+                val sock = DatagramSocket(bindAddr)
                 dnsProxySocket = sock
-                Log.d(TAG, "DNS 프록시 시작: [::1]:53 → 8.8.8.8:53")
+                Log.d(TAG, "DNS 프록시 시작: [::1]:53 -> 8.8.8.8:53")
                 val buf = ByteArray(512)
                 while (!Thread.currentThread().isInterrupted) {
                     val pkt = DatagramPacket(buf.clone(), 512)
-                    try { sock.receive(pkt) } catch (e: Exception) { break }
+                    try {
+                        sock.receive(pkt)
+                    } catch (e: Exception) {
+                        break
+                    }
                     val captured = pkt
-                    Thread(Runnable {
+                    Thread {
                         try {
                             val up = DatagramSocket()
-                            up.soTimeout = 5000
+                            up.setSoTimeout(5000)
                             val q = captured.data.copyOf(captured.length)
-                            up.send(DatagramPacket(q, q.size,
-                                InetAddress.getByName("8.8.8.8"), 53))
-                            val r  = ByteArray(512)
+                            up.send(DatagramPacket(q, q.size, InetAddress.getByName("8.8.8.8"), 53))
+                            val r = ByteArray(512)
                             val rp = DatagramPacket(r, r.size)
                             up.receive(rp)
                             up.close()
-                            sock.send(DatagramPacket(rp.data.copyOf(rp.length),
-                                rp.length, captured.socketAddress))
+                            val resp = rp.data.copyOf(rp.length)
+                            sock.send(DatagramPacket(resp, resp.size, captured.socketAddress))
                         } catch (e: Exception) {
-                            Log.w(TAG, "DNS 포워드 오류: ${e.message}")
+                            Log.w(TAG, "DNS forward error: ${e.message}")
                         }
-                    }).also { it.isDaemon = true }.start()
+                    }.apply {
+                        isDaemon = true
+                        start()
+                    }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "DNS 프록시 시작 실패 (포트 53 바인딩 불가): ${e.message}")
+                Log.w(TAG, "DNS proxy failed (port 53 bind): ${e.message}")
             }
-        }).also { it.isDaemon = true; it.name = "cloudflared-dns-proxy" }.start()
+        }.apply {
+            isDaemon = true
+            name = "cloudflared-dns-proxy"
+            start()
+        }
     }
 
     private fun stopDnsProxy() {
@@ -93,7 +102,7 @@ class CloudflaredManager @Inject constructor(
 
         // DNS 프록시 먼저 시작 (Go 바이너리가 [::1]:53 사용)
         startDnsProxy()
-        Thread.sleep(200) // 프록시가 준비될 때까지 잠깐 대기
+        Thread.sleep(200)
 
         _state.value = CloudflaredState.Connecting
 
@@ -106,7 +115,7 @@ class CloudflaredManager @Inject constructor(
             )
                 .redirectErrorStream(true)
                 .apply {
-                    environment()["HOME"]    = context.filesDir.absolutePath
+                    environment()["HOME"] = context.filesDir.absolutePath
                 }
                 .start()
 
@@ -178,7 +187,7 @@ class CloudflaredManager @Inject constructor(
         val bin = File(nativeDir, "libcloudflared.so")
         Log.d(TAG, "cloudflared 경로: ${bin.absolutePath}, exists=${bin.exists()}, canExec=${bin.canExecute()}")
         if (!bin.exists()) {
-            Log.e(TAG, "libcloudflared.so 없음 — APK에 번들되지 않은 것 같습니다")
+            Log.e(TAG, "libcloudflared.so 없음 -- APK에 번들되지 않은 것 같습니다")
             return null
         }
         if (!bin.canExecute()) {
