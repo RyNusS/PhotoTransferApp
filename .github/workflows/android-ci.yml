@@ -48,13 +48,6 @@ jobs:
       - name: Grant gradlew permission
         run: chmod +x gradlew
 
-      - name: Download cloudflared ARM64 binary
-        run: |
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          curl -L -o app/src/main/jniLibs/arm64-v8a/libcloudflared.so \
-            https://github.com/cloudflare/cloudflared/releases/download/2025.4.0/cloudflared-linux-arm64
-          echo "cloudflared size: $(ls -lh app/src/main/jniLibs/arm64-v8a/libcloudflared.so)"
-
       - name: Run Unit Tests
         run: ./gradlew test --stacktrace
 
