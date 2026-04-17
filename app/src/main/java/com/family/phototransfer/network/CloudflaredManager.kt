@@ -129,7 +129,7 @@ class CloudflaredManager @Inject constructor(
                     val line = reader.readLine() ?: break
                     Log.d(TAG, "cloudflared: $line")
 
-                    val match = Regex("https://[a-z0-9-]+\.trycloudflare\.com").find(line)
+                    val match = Regex("https://[a-z0-9-]+\\.trycloudflare\\.com").find(line)
                     if (match != null) {
                         val url = match.value
                         _state.value = CloudflaredState.Connected(url)
