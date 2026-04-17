@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +34,52 @@ class CloudflaredManager @Inject constructor(
     val state: StateFlow<CloudflaredState> = _state.asStateFlow()
 
     private var cfProcess: Process? = null
+    private var dnsProxySocket: DatagramSocket? = null
+
+    // ── DNS 프록시: [::1]:53 → 8.8.8.8:53 ────────────────────────
+    // Android에서 Go static 바이너리는 /etc/resolv.conf의 nameserver ::1을 사용하는데
+    // [::1]:53 에 아무것도 없어서 DNS 실패. 여기서 직접 [::1]:53을 열어 포워딩.
+    private fun startDnsProxy() {
+        Thread(Runnable {
+            try {
+                val sock = DatagramSocket(null)
+                sock.reuseAddress = true
+                sock.bind(InetSocketAddress(InetAddress.getByName("::1"), 53))
+                dnsProxySocket = sock
+                Log.d(TAG, "DNS 프록시 시작: [::1]:53 → 8.8.8.8:53")
+                val buf = ByteArray(512)
+                while (!Thread.currentThread().isInterrupted) {
+                    val pkt = DatagramPacket(buf.clone(), 512)
+                    try { sock.receive(pkt) } catch (e: Exception) { break }
+                    val captured = pkt
+                    Thread(Runnable {
+                        try {
+                            val up = DatagramSocket()
+                            up.soTimeout = 5000
+                            val q = captured.data.copyOf(captured.length)
+                            up.send(DatagramPacket(q, q.size,
+                                InetAddress.getByName("8.8.8.8"), 53))
+                            val r  = ByteArray(512)
+                            val rp = DatagramPacket(r, r.size)
+                            up.receive(rp)
+                            up.close()
+                            sock.send(DatagramPacket(rp.data.copyOf(rp.length),
+                                rp.length, captured.socketAddress))
+                        } catch (e: Exception) {
+                            Log.w(TAG, "DNS 포워드 오류: ${e.message}")
+                        }
+                    }).also { it.isDaemon = true }.start()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "DNS 프록시 시작 실패 (포트 53 바인딩 불가): ${e.message}")
+            }
+        }).also { it.isDaemon = true; it.name = "cloudflared-dns-proxy" }.start()
+    }
+
+    private fun stopDnsProxy() {
+        dnsProxySocket?.close()
+        dnsProxySocket = null
+    }
 
     // ── 시작 ──────────────────────────────────────────────────────────
     suspend fun start(): Boolean = withContext(Dispatchers.IO) {
@@ -40,6 +90,10 @@ class CloudflaredManager @Inject constructor(
             _state.value = CloudflaredState.Error("cloudflared 바이너리를 찾을 수 없습니다 (libcloudflared.so)")
             return@withContext false
         }
+
+        // DNS 프록시 먼저 시작 (Go 바이너리가 [::1]:53 사용)
+        startDnsProxy()
+        Thread.sleep(200) // 프록시가 준비될 때까지 잠깐 대기
 
         _state.value = CloudflaredState.Connecting
 
@@ -53,33 +107,29 @@ class CloudflaredManager @Inject constructor(
                 .redirectErrorStream(true)
                 .apply {
                     environment()["HOME"]    = context.filesDir.absolutePath
-                    environment()["GODEBUG"] = "netdns=cgo"  // Android DNS 사용
                 }
                 .start()
 
             cfProcess = proc
 
             val reader   = proc.inputStream.bufferedReader()
-            val deadline = System.currentTimeMillis() + 30_000L   // 30초 대기
+            val deadline = System.currentTimeMillis() + 30_000L
 
             while (System.currentTimeMillis() < deadline) {
                 if (reader.ready()) {
                     val line = reader.readLine() ?: break
                     Log.d(TAG, "cloudflared: $line")
 
-                    // trycloudflare.com URL 파싱
-                    val match = Regex("https://[a-z0-9-]+\\.trycloudflare\\.com").find(line)
+                    val match = Regex("https://[a-z0-9-]+\.trycloudflare\.com").find(line)
                     if (match != null) {
                         val url = match.value
                         _state.value = CloudflaredState.Connected(url)
                         Log.d(TAG, "터널 URL 획득: $url")
-                        // 백그라운드 로그 소비
                         Thread { reader.forEachLine { Log.d(TAG, "cloudflared: $it") } }.start()
                         monitorProcess(proc)
                         return@withContext true
                     }
 
-                    // 오류 키워드 감지 (로그만 남기고 계속 시도)
                     if (line.contains("error", ignoreCase = true) &&
                         line.contains("failed", ignoreCase = true)) {
                         Log.w(TAG, "cloudflared 오류 로그: $line")
@@ -88,19 +138,15 @@ class CloudflaredManager @Inject constructor(
                     Thread.sleep(100)
                 }
 
-                // 프로세스 조기 종료 감지
                 try {
                     val exit = proc.exitValue()
                     val remaining = try { reader.readText() } catch (e: Exception) { "" }
                     Log.e(TAG, "cloudflared 조기 종료 exitCode=$exit: ${remaining.trim()}")
                     _state.value = CloudflaredState.Error("cloudflared 종료 (exitCode=$exit): ${remaining.trim().take(80)}")
                     return@withContext false
-                } catch (ignored: IllegalThreadStateException) {
-                    // 아직 실행 중 → 계속 대기
-                }
+                } catch (ignored: IllegalThreadStateException) { }
             }
 
-            // 30초 타임아웃
             try {
                 proc.exitValue()
                 _state.value = CloudflaredState.Error("URL 생성 전 프로세스 종료")
@@ -121,6 +167,7 @@ class CloudflaredManager @Inject constructor(
     fun stop() {
         cfProcess?.destroy()
         cfProcess = null
+        stopDnsProxy()
         _state.value = CloudflaredState.Idle
         Log.d(TAG, "cloudflared 터널 중지")
     }
