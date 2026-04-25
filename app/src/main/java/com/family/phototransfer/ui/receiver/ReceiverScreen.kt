@@ -1,6 +1,13 @@
 package com.family.phototransfer.ui.receiver
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.window.Dialog
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -237,9 +244,36 @@ fun ReceiverStatusCard(
                     if (tunnelUrl != null) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "Samsung 폰의 설정에서 아래 URL을 입력하세요:",
+                            text = "Samsung 폰에서 QR코드를 스캔하세요:",
                             color = tunnelColor.copy(alpha = 0.8f),
                             fontSize = 11.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        // QR코드 표시
+                        val deepLinkUrl = "phototransfer://send?url=$tunnelUrl"
+                        val qrBitmap = remember(deepLinkUrl) { generateQrBitmap(deepLinkUrl, 300) }
+                        if (qrBitmap != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(200.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White)
+                                    .padding(8.dp)
+                                    .align(Alignment.CenterHorizontally)
+                            ) {
+                                Image(
+                                    bitmap = qrBitmap.asImageBitmap(),
+                                    contentDescription = "QR코드",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        // URL 텍스트 + 복사 버튼
+                        Text(
+                            text = "또는 URL을 직접 입력:",
+                            color = tunnelColor.copy(alpha = 0.6f),
+                            fontSize = 10.sp
                         )
                         Spacer(Modifier.height(4.dp))
                         Row(
@@ -435,4 +469,19 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1_024         -> "%.1f KB".format(bytes / 1_024.0)
     else                   -> "$bytes B"
+}
+
+// ── QR코드 생성 헬퍼 ───────────────────────────────────────────
+fun generateQrBitmap(content: String, sizePx: Int): Bitmap? {
+    return try {
+        val hints = mapOf(EncodeHintType.MARGIN to 1)
+        val bitMatrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
+        for (x in 0 until sizePx) {
+            for (y in 0 until sizePx) {
+                bitmap.setPixel(x, y, if (bitMatrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+        }
+        bitmap
+    } catch (e: Exception) { null }
 }

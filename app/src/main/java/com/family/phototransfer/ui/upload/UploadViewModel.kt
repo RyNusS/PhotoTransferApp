@@ -59,7 +59,8 @@ data class UploadUiState(
     val duplicateCount: Int = 0,
     val failedCount: Int = 0,
     val isUploadDone: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val remoteUrl: String? = null   // 딥링크(QR스캔)로 받은 원격 전송 URL
 ) {
     val selectedSizeText: String get() {
         val totalBytes = allFiles.filter { it.id in selectedFiles }.sumOf { it.size }
@@ -101,6 +102,15 @@ class UploadViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // ── 딥링크 원격 URL 설정 ────────────────────────────────────
+    fun setRemoteUrl(url: String) {
+        _uiState.value = _uiState.value.copy(remoteUrl = url)
+    }
+
+    fun clearRemoteUrl() {
+        _uiState.value = _uiState.value.copy(remoteUrl = null)
     }
 
     // ── 갤러리 로드 ───────────────────────────────────────────

@@ -106,6 +106,14 @@ fun UploadScreen(viewModel: UploadViewModel = hiltViewModel()) {
             onClearAll    = { viewModel.clearSelection() }
         )
 
+        // 2-a) 딥링크로 받은 원격 URL 카드 (QR 스캔 후 표시)
+        if (uiState.remoteUrl != null) {
+            RemoteUrlCard(
+                url = uiState.remoteUrl,
+                onClear = { viewModel.clearRemoteUrl() }
+            )
+        }
+
         // 2) 기기 연결 섹션
         DeviceConnectionSection(
             isScanning        = uiState.isScanning,
@@ -722,6 +730,52 @@ fun UploadBottomBar(
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold
                 )
             }
+        }
+    }
+}
+
+
+// ── 원격 URL 카드 (딥링크/QR 스캔으로 받은 경우) ───────────────
+@Composable
+fun RemoteUrlCard(url: String, onClear: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0D2D1A))
+            .border(0.5.dp, SuccessGreen.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Cloud,
+            contentDescription = null,
+            tint = SuccessGreen,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "원격 연결 (QR 스캔)",
+                color = SuccessGreen,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = url,
+                color = SuccessGreen.copy(alpha = 0.7f),
+                fontSize = 10.sp,
+                maxLines = 1
+            )
+        }
+        IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "원격 연결 해제",
+                tint = SuccessGreen.copy(alpha = 0.7f),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

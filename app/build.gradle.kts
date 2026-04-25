@@ -14,8 +14,8 @@ android {
         applicationId = "com.family.phototransfer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.2.0"
+        versionCode = 5
+        versionName = "2.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -79,4 +79,7 @@ dependencies {
     implementation(libs.coroutines.android)
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // QR코드 생성 (ZXing core)
+    implementation("com.google.zxing:core:3.5.2")
 }

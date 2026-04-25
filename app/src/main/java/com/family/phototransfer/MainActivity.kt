@@ -1,5 +1,7 @@
 package com.family.phototransfer
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,6 +32,7 @@ import com.family.phototransfer.ui.theme.PhotoTransferTheme
 import com.family.phototransfer.ui.upload.UploadScreen
 import com.family.phototransfer.ui.upload.UploadViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.asSharedFlow
 import javax.inject.Inject
 
 // ── 네비게이션 라우트 ──────────────────────────────────────────
@@ -51,21 +54,59 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var receiverStateHolder: ReceiverStateHolder
 
+    // 딥링크로 전달된 URL (QR 스캔 → Upload 탭 자동 입력용)
+    private val _deepLinkUrl = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val deepLinkUrl = _deepLinkUrl.asSharedFlow()
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent) {
+        val uri: Uri = intent.data ?: return
+        if (uri.scheme == "phototransfer" && uri.host == "send") {
+            val url = uri.getQueryParameter("url") ?: return
+            _deepLinkUrl.tryEmit(url)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleDeepLink(intent)
         setContent {
             PhotoTransferTheme {
-                PhotoTransferNavHost(receiverStateHolder = receiverStateHolder)
+                PhotoTransferNavHost(
+                    receiverStateHolder = receiverStateHolder,
+                    deepLinkUrl = deepLinkUrl
+                )
             }
         }
     }
 }
 
 @Composable
-fun PhotoTransferNavHost(receiverStateHolder: ReceiverStateHolder) {
+fun PhotoTransferNavHost(
+    receiverStateHolder: ReceiverStateHolder,
+    deepLinkUrl: kotlinx.coroutines.flow.SharedFlow<String> = kotlinx.coroutines.flow.MutableSharedFlow()
+) {
     val navController        = rememberNavController()
     val navBackStackEntry    by navController.currentBackStackEntryAsState()
     val currentRoute          = navBackStackEntry?.destination?.route
+
+    // ── 딥링크 URL 수신 → Upload 탭 이동 + ViewModel에 전달 ──
+    var pendingDeepLinkUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        deepLinkUrl.collect { url ->
+            pendingDeepLinkUrl = url
+            selectedMode = "upload"
+            navController.navigate(Screen.Upload.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState    = true
+            }
+        }
+    }
 
     // ── 선택된 모드 상태 (upload = 기본값) ────────────────────
     var selectedMode by remember { mutableStateOf("upload") }
@@ -177,9 +218,15 @@ fun PhotoTransferNavHost(receiverStateHolder: ReceiverStateHolder) {
             composable(Screen.Upload.route) {
                 val uploadVm: UploadViewModel = hiltViewModel()
                 val uploadState by uploadVm.uiState.collectAsState()
-                // isUploading 상태를 상위로 전달
                 LaunchedEffect(uploadState.isUploading) {
                     isUploading = uploadState.isUploading
+                }
+                // 딥링크로 받은 URL이 있으면 ViewModel에 전달
+                LaunchedEffect(pendingDeepLinkUrl) {
+                    pendingDeepLinkUrl?.let { url ->
+                        uploadVm.setRemoteUrl(url)
+                        pendingDeepLinkUrl = null
+                    }
                 }
                 UploadScreen(viewModel = uploadVm)
             }
