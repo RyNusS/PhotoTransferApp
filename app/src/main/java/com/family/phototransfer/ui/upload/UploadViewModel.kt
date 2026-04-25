@@ -126,7 +126,7 @@ class UploadViewModel @Inject constructor(
 
     // ── 딥링크 원격 URL 설정 ────────────────────────────────────
     fun setRemoteUrl(url: String) {
-        // QR 스캔으로 받은 URL을 selectedDevice로도 설정해서 즉시 전송 가능하도록
+        // QR 스캔으로 받은 URL을 selectedDevice로 설정 + DataStore에도 저장 (Settings 탭에 자동 반영)
         _uiState.value = _uiState.value.copy(
             remoteUrl       = url,
             selectedDevice  = DiscoveredDevice(
@@ -135,6 +135,12 @@ class UploadViewModel @Inject constructor(
             ),
             cloudSyncActive = true
         )
+        viewModelScope.launch {
+            appContext.dataStore.edit { prefs ->
+                prefs[booleanPreferencesKey("use_remote_mode")] = true
+                prefs[stringPreferencesKey("remote_host")]      = url
+            }
+        }
     }
 
     fun clearRemoteUrl() {
