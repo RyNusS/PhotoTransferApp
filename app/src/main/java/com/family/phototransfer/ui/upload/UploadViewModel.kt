@@ -15,6 +15,7 @@ import com.family.phototransfer.network.WifiDeviceScanner
 import com.family.phototransfer.ui.settings.dataStore
 import com.family.phototransfer.util.NotificationHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,7 @@ import javax.inject.Inject
 data class MediaFileUi(
     val id: Long,
     val uri: String,
-    val thumbnailUri: String,   // 썸네일 표시용 (동영상은 별도 썸네일 URI)
+    val thumbnailUri: String,
     val name: String,
     val size: Long,
     val isVideo: Boolean,
@@ -43,7 +44,7 @@ data class UploadUiState(
     val selectedFiles: Set<Long> = emptySet(),
     val selectedTab: MediaTab = MediaTab.ALL,
     val cloudSyncActive: Boolean = false,
-    val gridColumns: Int = 3,                             // ✅ 3열/5열 전환
+    val gridColumns: Int = 3,
 
     val isScanning: Boolean = false,
     val scanEnabled: Boolean = true,
@@ -78,18 +79,18 @@ fun formatSize(bytes: Long): String = when {
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val transferManager: TransferManager,
-    private val receiverStateHolder: ReceiverStateHolder  // ✅ 수신 상태 공유
+    private val receiverStateHolder: ReceiverStateHolder,
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UploadUiState())
     val uiState: StateFlow<UploadUiState> = _uiState.asStateFlow()
 
     init {
-        // ✅ Receiver 탭의 수신 상태를 자동으로 감지해서 탐색 버튼 제어
+        // Receiver 탭의 수신 상태를 자동으로 감지해서 탐색 버튼 제어
         viewModelScope.launch {
             receiverStateHolder.isReceiving.collectLatest { isReceiving ->
                 if (isReceiving) {
-                    // 수신 시작 → 탐색 비활성화 + 기존 탐색 결과 초기화
                     _uiState.value = _uiState.value.copy(
                         scanEnabled       = false,
                         discoveredDevices = emptyList(),
@@ -97,20 +98,69 @@ class UploadViewModel @Inject constructor(
                         cloudSyncActive   = false
                     )
                 } else {
-                    // 수신 중지 → 탐색 다시 활성화
                     _uiState.value = _uiState.value.copy(scanEnabled = true)
                 }
             }
+        }
+
+        // Settings에서 원격 연결 설정 시 자동으로 selectedDevice 반영
+        // (QR 스캔으로 설정된 remoteUrl이 있는 경우는 덮어쓰지 않음)
+        viewModelScope.launch {
+            appContext.dataStore.data
+                .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+                .collect { prefs ->
+                    val useRemote = prefs[booleanPreferencesKey("use_remote_mode")] ?: false
+                    val host = (prefs[stringPreferencesKey("remote_host")] ?: "").trim()
+                    if (useRemote && host.isNotBlank() && _uiState.value.remoteUrl == null) {
+                        _uiState.value = _uiState.value.copy(
+                            selectedDevice  = DiscoveredDevice(
+                                ipAddress  = host,
+                                deviceName = "원격 연결 (Cloudflare Tunnel)"
+                            ),
+                            cloudSyncActive = true
+                        )
+                    }
+                }
         }
     }
 
     // ── 딥링크 원격 URL 설정 ────────────────────────────────────
     fun setRemoteUrl(url: String) {
-        _uiState.value = _uiState.value.copy(remoteUrl = url)
+        // QR 스캔으로 받은 URL을 selectedDevice로도 설정해서 즉시 전송 가능하도록
+        _uiState.value = _uiState.value.copy(
+            remoteUrl       = url,
+            selectedDevice  = DiscoveredDevice(
+                ipAddress  = url,
+                deviceName = "원격 연결 (QR 스캔)"
+            ),
+            cloudSyncActive = true
+        )
     }
 
     fun clearRemoteUrl() {
         _uiState.value = _uiState.value.copy(remoteUrl = null)
+        // remoteUrl 클리어 후 Settings 원격 연결이 있으면 다시 반영
+        viewModelScope.launch {
+            val prefs = appContext.dataStore.data
+                .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+                .first()
+            val useRemote = prefs[booleanPreferencesKey("use_remote_mode")] ?: false
+            val host = (prefs[stringPreferencesKey("remote_host")] ?: "").trim()
+            if (useRemote && host.isNotBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    selectedDevice  = DiscoveredDevice(
+                        ipAddress  = host,
+                        deviceName = "원격 연결 (Cloudflare Tunnel)"
+                    ),
+                    cloudSyncActive = true
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    selectedDevice  = null,
+                    cloudSyncActive = false
+                )
+            }
+        }
     }
 
     // ── 갤러리 로드 ───────────────────────────────────────────
@@ -134,7 +184,7 @@ class UploadViewModel @Inject constructor(
                         result.add(MediaFileUi(
                             id           = id,
                             uri          = contentUri,
-                            thumbnailUri = contentUri,   // 사진은 원본 URI 그대로
+                            thumbnailUri = contentUri,
                             name         = cursor.getString(nameCol),
                             size         = cursor.getLong(sizeCol),
                             isVideo      = false
@@ -153,7 +203,6 @@ class UploadViewModel @Inject constructor(
                     val durCol  = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
                     while (cursor.moveToNext()) {
                         val id = cursor.getLong(idCol)
-                        // 동영상 썸네일: MediaStore Thumbnails URI 사용
                         val thumbUri = android.net.Uri.withAppendedPath(
                             MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "$id"
                         ).toString()
@@ -190,12 +239,10 @@ class UploadViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedFiles = current)
     }
 
-    // ✅ 드래그 선택: 드래그된 ID 집합으로 selectedFiles 덮어쓰기
     fun dragSelect(ids: Set<Long>) {
         _uiState.value = _uiState.value.copy(selectedFiles = ids)
     }
 
-    // ✅ 3열 ↔ 5열 전환
     fun toggleGridColumns() {
         val next = if (_uiState.value.gridColumns == 3) 5 else 3
         _uiState.value = _uiState.value.copy(gridColumns = next)
@@ -209,9 +256,8 @@ class UploadViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedFiles = emptySet())
     }
 
-    // ── 수신기기 탐색 제어 (7번 요구사항) ─────────────────────
+    // ── 수신기기 탐색 제어 ─────────────────────────────────────
 
-    /** Receiver 탭에서 수신 시작 시 호출 → 탐색 비활성화 + 선택 기기 해제 */
     fun onReceiverStarted() {
         _uiState.value = _uiState.value.copy(
             scanEnabled       = false,
@@ -221,7 +267,6 @@ class UploadViewModel @Inject constructor(
         )
     }
 
-    /** Receiver 탭에서 수신 중지 시 호출 → 탐색 다시 활성화 */
     fun onReceiverStopped() {
         _uiState.value = _uiState.value.copy(scanEnabled = true)
     }
@@ -230,7 +275,6 @@ class UploadViewModel @Inject constructor(
     fun scanForDevices(context: Context) {
         if (!_uiState.value.scanEnabled) return
         viewModelScope.launch {
-            // 원격 연결 모드 확인
             val prefs = context.dataStore.data
                 .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
                 .first()
@@ -238,7 +282,6 @@ class UploadViewModel @Inject constructor(
             val remoteHost    = prefs[stringPreferencesKey("remote_host")]      ?: ""
 
             if (useRemoteMode) {
-                // 원격 모드: 설정에 저장된 Cloudflare 터널 URL 사용
                 val url = remoteHost.trim()
                 if (url.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
@@ -261,7 +304,6 @@ class UploadViewModel @Inject constructor(
                 return@launch
             }
 
-            // 로컬 모드: 기존 WiFi 스캔
             _uiState.value = _uiState.value.copy(isScanning = true, discoveredDevices = emptyList(), selectedDevice = null, errorMessage = null)
             try {
                 val scanner = WifiDeviceScanner(context)
@@ -312,7 +354,6 @@ class UploadViewModel @Inject constructor(
                         is TransferEvent.AllDone   -> {
                             val final = _uiState.value
                             _uiState.value = final.copy(isUploading = false, isUploadDone = true, selectedFiles = emptySet())
-                            // ✅ 알림 설정값 읽어서 전달
                             val prefs     = context.dataStore.data.first()
                             val showNotif = prefs[booleanPreferencesKey("show_notification")] ?: true
                             NotificationHelper.showTransferComplete(
