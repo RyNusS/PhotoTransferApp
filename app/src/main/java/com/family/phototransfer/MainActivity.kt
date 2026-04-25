@@ -94,6 +94,9 @@ fun PhotoTransferNavHost(
     val navBackStackEntry    by navController.currentBackStackEntryAsState()
     val currentRoute          = navBackStackEntry?.destination?.route
 
+    // ── 선택된 모드 상태 (upload = 기본값) ────────────────────
+    var selectedMode by remember { mutableStateOf("upload") }
+
     // ── 딥링크 URL 수신 → Upload 탭 이동 + ViewModel에 전달 ──
     var pendingDeepLinkUrl by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
@@ -107,9 +110,6 @@ fun PhotoTransferNavHost(
             }
         }
     }
-
-    // ── 선택된 모드 상태 (upload = 기본값) ────────────────────
-    var selectedMode by remember { mutableStateOf("upload") }
 
     // ── 전송 중 상태 (UploadViewModel에서 읽기 위한 참조) ─────
     // NavHost 내부에서만 hiltViewModel() 사용 가능하므로
