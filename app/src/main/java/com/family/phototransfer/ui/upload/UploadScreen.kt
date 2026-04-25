@@ -107,9 +107,10 @@ fun UploadScreen(viewModel: UploadViewModel = hiltViewModel()) {
         )
 
         // 2-a) 딥링크로 받은 원격 URL 카드 (QR 스캔 후 표시)
-        if (uiState.remoteUrl != null) {
+        val remoteUrl = uiState.remoteUrl
+        if (remoteUrl != null) {
             RemoteUrlCard(
-                url = uiState.remoteUrl,
+                url = remoteUrl,
                 onClear = { viewModel.clearRemoteUrl() }
             )
         }
