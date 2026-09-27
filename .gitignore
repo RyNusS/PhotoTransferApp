@@ -1,0 +1,19 @@
+# Gradle / 빌드 산출물
+.gradle/
+.kotlin/
+build/
+app/build/
+
+# Android Studio
+.idea/
+*.iml
+
+# 로컬 설정 (PC 경로 등 개인 정보 포함)
+local.properties
+
+# 서명키
+*.jks
+*.keystore
+
+# 임시
+ptpatch.tgz

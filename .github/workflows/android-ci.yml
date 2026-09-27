@@ -22,10 +22,25 @@ jobs:
   build:
     name: Build & Unit Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write          # 릴리스(앱 업데이트 파일) 게시용
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 고정 서명키 복원: 모든 빌드를 같은 키로 서명해야 앱 내 업데이트(덮어쓰기 설치)가 가능
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "signing key restored"
+          else
+            echo "::warning::DEBUG_KEYSTORE_B64 secret 없음 - 임시 키로 서명됨 (업데이트 불가)"
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -68,6 +83,19 @@ jobs:
           name: debug-apk-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      # master push 시 GitHub Release 게시 → 앱의 [업데이트 확인] 버튼이 이 파일을 내려받음
+      - name: Publish release for in-app update
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          VC=$((GITHUB_RUN_NUMBER + 100))
+          cp app/build/outputs/apk/debug/app-debug.apk "PhotoTransfer-${VC}.apk"
+          printf '%s\n' "$COMMIT_MSG" > notes.txt
+          gh release create "build-${VC}" "PhotoTransfer-${VC}.apk" \
+            --title "build ${VC}" --notes-file notes.txt --latest
 
 # ── 에뮬레이터 테스트 Job (수동 트리거 시에만) ─────────────────────
   emulator-test:

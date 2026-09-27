@@ -88,8 +88,8 @@ jobs:
 
       - name: Commit and push
         run: |
-          git config user.name "RyNusS"
-          git config user.email "doa4004@gmail.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           VERSION="${{ steps.resolve.outputs.version }}"
           git add app/src/main/jniLibs/arm64-v8a/libcloudflared.so
           if git diff --staged --quiet; then

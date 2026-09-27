@@ -1,4 +1,0 @@
-#Sat Apr 04 15:04:51 KST 2026
-base.0=C\:\\Users\\doa40\\StudioProjects\\PhotoTransferApp\\app\\build\\intermediates\\dex\\debugAndroidTest\\mergeProjectDexDebugAndroidTest\\0\\classes.dex
-path.0=0/classes.dex
-renamed.0=classes.dex

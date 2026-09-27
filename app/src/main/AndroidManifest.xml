@@ -22,6 +22,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 정확한 알람 시각 지정 (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 앱 내 업데이트: 내려받은 새 버전 설치 화면 띄우기 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".PhotoTransferApp"

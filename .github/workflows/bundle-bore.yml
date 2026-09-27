@@ -46,8 +46,8 @@ jobs:
       - name: Commit and push
         if: steps.check.outputs.skip == 'false'
         run: |
-          git config user.email "doa4004@gmail.com"
-          git config user.name "RyNusS"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git add app/src/main/jniLibs/arm64-v8a/libbore.so
           git commit -m "feat: bundle bore v0.6.0 ARM64 binary as libbore.so [skip ci]"
           git push

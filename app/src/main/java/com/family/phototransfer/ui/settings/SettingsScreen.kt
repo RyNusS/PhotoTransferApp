@@ -711,6 +711,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
         }
 
+        // ── 전원 안정화 / 재부팅 기록 / 앱 업데이트 ────────────
+        item { DeviceCareSection() }
+
         item { Spacer(Modifier.height(16.dp)) }
 
         // ── 앱 버전 ────────────────────────────────────────────

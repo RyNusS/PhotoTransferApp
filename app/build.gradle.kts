@@ -14,8 +14,9 @@ android {
         applicationId = "com.family.phototransfer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "2.3.1"
+        // CI 빌드는 실행 번호 + 100 (항상 이전 빌드보다 큼), 로컬 빌드는 8
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(100) ?: 8
+        versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

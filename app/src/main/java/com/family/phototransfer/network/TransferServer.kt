@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.family.phototransfer.util.ReceivePowerSaver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -157,6 +158,7 @@ class TransferServer(
                     saveViaFileSystem(dataInput, fileName, fileSize)
                 }
 
+                if (result != null) ReceivePowerSaver.pauseBetweenFiles()   // 저전력 모드: 파일 사이 휴식
                 val body = if (result != null) "OK" else "ERROR"
                 val resp = "HTTP/1.1 200 OK\r\nContent-Length: ${body.length}\r\nContent-Type: text/plain\r\n\r\n$body"
                 socket.outputStream.write(resp.toByteArray(Charsets.UTF_8))
@@ -212,6 +214,7 @@ class TransferServer(
                     return
                 }
 
+                ReceivePowerSaver.pauseBetweenFiles()   // 저전력 모드: 파일 사이 휴식
                 output.writeUTF("OK"); output.flush()
                 Log.d(TAG, "TCP 수신 완료: $fileName (${result.fileSize} bytes)")
                 onFileReceived(result.copy(sourceDevice = sourceDevice))
@@ -302,12 +305,14 @@ class TransferServer(
     private fun copyStream(input: DataInputStream, output: OutputStream, fileSize: Long): Long {
         val buffer    = ByteArray(65_536)
         var totalRead = 0L
+        val startNanos = System.nanoTime()
         while (totalRead < fileSize) {
             val toRead    = minOf(buffer.size.toLong(), fileSize - totalRead).toInt()
             val bytesRead = input.read(buffer, 0, toRead)
             if (bytesRead == -1) break
             output.write(buffer, 0, bytesRead)
             totalRead += bytesRead
+            ReceivePowerSaver.throttle(startNanos, totalRead)   // 저전력 모드: 수신 속도 제한
         }
         return totalRead
     }
